@@ -1,0 +1,27 @@
+# 统一换行符：仓库内文本文件一律 LF，避免 Windows/macOS/Linux 混用产生无意义 diff
+* text=auto eol=lf
+
+# Windows 脚本保留 CRLF，避免 PowerShell 5.1 与 cmd 解析异常
+*.ps1   text eol=crlf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# 二进制文件不做换行转换
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
+*.pdf   binary
+*.zip   binary
+*.exe   binary
+
+# 便于 code review 与统计
+*.go    diff=go
+*.sql   diff=sql
+*.md    diff=markdown

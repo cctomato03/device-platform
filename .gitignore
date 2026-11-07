@@ -1,0 +1,52 @@
+# ================ Go 构建产物 ================
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+coverage.out
+coverage.html
+
+# ================ 前端 ================
+web/node_modules/
+web/dist/
+web/.vite/
+web/*.local
+internal/webui/dist/
+
+# ================ 运行期产物 ================
+logs/
+storage/
+uploads/
+*.log
+*.pid
+
+# ================ 本地私有配置（含密钥） ================
+configs/config.local.yaml
+configs/config.*.local.yaml
+.env
+.env.*
+!.env.example
+# 前端构建必需的 env 文件（VITE_ 变量，必须入库，Docker / CI 都依赖）
+!web/.env
+!web/.env.development
+!web/.env.production
+
+# ================ 临时文件 / 工具输出 ================
+.survey/
+tmp_*
+*.tmp
+*.bak
+
+# ================ IDE / 操作系统 ================
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

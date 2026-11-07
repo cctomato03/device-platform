@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>web-basic API 文档</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #1f2329;
+        --muted: #6b7280;
+        --line: #e5e7eb;
+        --brand: #4a6cf7;
+        --get: #10b981;
+        --post: #3b82f6;
+        --put: #f59e0b;
+        --del: #ef4444;
+        --code-bg: #f6f8fa;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 14px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: var(--fg);
+        background: var(--bg);
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        background: #fff;
+        border-bottom: 1px solid var(--line);
+      }
+      header h1 { margin: 0; font-size: 16px; }
+      header .meta { color: var(--muted); font-size: 12px; }
+      .toolbar { display: flex; gap: 8px; align-items: center; }
+      input[type='text'] {
+        width: 260px;
+        padding: 7px 10px;
+        font-size: 13px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        outline: none;
+      }
+      input[type='text']:focus { border-color: var(--brand); }
+      button {
+        padding: 7px 12px;
+        font-size: 13px;
+        color: #fff;
+        cursor: pointer;
+        background: var(--brand);
+        border: 0;
+        border-radius: 6px;
+      }
+      button.ghost {
+        color: var(--fg);
+        background: #fff;
+        border: 1px solid var(--line);
+      }
+      main { max-width: 1080px; padding: 18px 20px 80px; margin: 0 auto; }
+      .tag { margin: 26px 0 10px; font-size: 15px; font-weight: 600; }
+      .tag small { margin-left: 8px; font-weight: 400; color: var(--muted); }
+      .op {
+        margin-bottom: 8px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+      .op-head {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 12px;
+        cursor: pointer;
+        user-select: none;
+      }
+      .op-head:hover { background: var(--code-bg); }
+      .method {
+        min-width: 62px;
+        padding: 2px 8px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #fff;
+        text-align: center;
+        border-radius: 4px;
+      }
+      .m-get { background: var(--get); }
+      .m-post { background: var(--post); }
+      .m-put, .m-patch { background: var(--put); }
+      .m-delete { background: var(--del); }
+      .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+      .summary { margin-left: auto; color: var(--muted); font-size: 12px; }
+      .op-body {
+        display: none;
+        padding: 12px;
+        border-top: 1px solid var(--line);
+        background: var(--code-bg);
+      }
+      .op.open .op-body { display: block; }
+      .row { margin-bottom: 10px; font-size: 13px; }
+      .row b { display: inline-block; min-width: 74px; color: var(--muted); font-weight: 500; }
+      .params { width: 100%; font-size: 12px; border-collapse: collapse; }
+      .params th, .params td { padding: 5px 8px; text-align: left; border-bottom: 1px solid var(--line); }
+      pre {
+        max-height: 320px;
+        padding: 10px;
+        margin: 6px 0 0;
+        overflow: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+      .empty { padding: 40px; color: var(--muted); text-align: center; }
+      a { color: var(--brand); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1 id="title">web-basic API 文档</h1>
+        <div class="meta" id="meta">加载中…</div>
+      </div>
+      <div class="toolbar">
+        <input id="token" type="text" placeholder="粘贴 accessToken 以测试请求（可选）" />
+        <button class="ghost" id="toggle-all">展开全部</button>
+        <button id="reload">刷新</button>
+      </div>
+    </header>
+    <main id="main"><div class="empty">正在加载 openapi.json…</div></main>
+
+    <script>
+      const base = './openapi.json'
+      let spec = null
+      const state = { expanded: false }
+
+      const esc = (s) =>
+        String(s == null ? '' : s).replace(
+          /[&<>"]/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]
+        )
+
+      async function load() {
+        const res = await fetch(base, { cache: 'no-store' })
+        spec = await res.json()
+        render()
+      }
+
+      function render() {
+        const info = spec.info || {}
+        document.getElementById('title').textContent = info.title || 'API 文档'
+        const pathCount = Object.keys(spec.paths || {}).length
+        document.getElementById('meta').textContent =
+          (info.description ? info.description + ' · ' : '') +
+          '版本 ' +
+          (info.version || '-') +
+          ' · 共 ' +
+          pathCount +
+          ' 个路径'
+
+        const groups = {}
+        Object.entries(spec.paths || {}).forEach(([path, item]) => {
+          Object.entries(item).forEach(([method, op]) => {
+            const tag = (op.tags && op.tags[0]) || '其他'
+            ;(groups[tag] = groups[tag] || []).push({ path, method, op })
+          })
+        })
+
+        const main = document.getElementById('main')
+        main.innerHTML = Object.keys(groups)
+          .sort()
+          .map((tag) => {
+            const ops = groups[tag]
+              .sort((a, b) => a.path.localeCompare(b.path))
+              .map((x) => opHtml(x))
+              .join('')
+            return `<div class="tag">${esc(tag)}<small>${ops.length} 个接口</small></div>${ops}`
+          })
+          .join('')
+
+        main.querySelectorAll('.op-head').forEach((el) =>
+          el.addEventListener('click', () => el.parentElement.classList.toggle('open'))
+        )
+        main.querySelectorAll('.try').forEach((btn) =>
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation()
+            tryRequest(btn)
+          })
+        )
+      }
+
+      function opHtml({ path, method, op }) {
+        const params = (op.parameters || [])
+          .map(
+            (p) =>
+              `<tr><td>${esc(p.name)}</td><td>${esc(p.in)}</td><td>${
+                p.required ? '是' : '否'
+              }</td><td>${esc((p.schema && p.schema.type) || '')}</td><td>${esc(
+                p.description || ''
+              )}</td></tr>`
+          )
+          .join('')
+        const sec = (op.security || []).length ? '需要 Bearer Token' : '免鉴权'
+        return `<div class="op" data-method="${esc(method)}" data-path="${esc(path)}">
+          <div class="op-head">
+            <span class="method m-${esc(method)}">${esc(method.toUpperCase())}</span>
+            <span class="path">${esc(path)}</span>
+            <span class="summary">${esc(op.summary || '')}</span>
+          </div>
+          <div class="op-body">
+            <div class="row"><b>鉴权</b>${esc(sec)}</div>
+            ${
+              params
+                ? `<div class="row"><b>参数</b><table class="params"><thead><tr><th>名称</th><th>位置</th><th>必填</th><th>类型</th><th>说明</th></tr></thead><tbody>${params}</tbody></table></div>`
+                : ''
+            }
+            <div class="row"><b>调用</b><button class="ghost try">发送请求</button></div>
+            <pre class="result">尚未请求</pre>
+          </div>
+        </div>`
+      }
+
+      async function tryRequest(btn) {
+        const op = btn.closest('.op')
+        const method = op.dataset.method.toUpperCase()
+        const path = op.dataset.path
+        const pre = op.querySelector('.result')
+        const token = document.getElementById('token').value.trim()
+        pre.textContent = '请求中…'
+        try {
+          const res = await fetch(path, {
+            method,
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: 'Bearer ' + token } : {})
+            },
+            body: ['POST', 'PUT', 'PATCH'].includes(method) ? '{}' : undefined
+          })
+          const text = await res.text()
+          pre.textContent = `HTTP ${res.status}\n\n` + text.slice(0, 4000)
+        } catch (err) {
+          pre.textContent = '请求失败：' + err
+        }
+      }
+
+      document.getElementById('reload').addEventListener('click', load)
+      document.getElementById('toggle-all').addEventListener('click', (e) => {
+        state.expanded = !state.expanded
+        document.querySelectorAll('.op').forEach((el) => el.classList.toggle('open', state.expanded))
+        e.target.textContent = state.expanded ? '收起全部' : '展开全部'
+      })
+      load()
+    </script>
+  </body>
+</html>
