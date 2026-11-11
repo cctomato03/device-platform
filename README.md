@@ -40,7 +40,7 @@ docker compose -f deploy/docker-compose.yml up -d --build     # 前后端一体�
 ## 测试
 
 ```bash
-node scripts/e2e-api.mjs   http://127.0.0.1:8090 admin  # 接口 75 条断言
+node scripts/e2e-api.mjs   http://127.0.0.1:8090 admin  # 接口 76 条断言
 node scripts/e2e-smoke.mjs http://127.0.0.1:8090 admin  # 浏览器 61 条断言
 ```
 

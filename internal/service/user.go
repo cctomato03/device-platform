@@ -88,6 +88,15 @@ func (s *Service) ListUsers(ctx context.Context, q *repository.UserQuery, p *pri
 	}
 
 	deptNames, _ := s.deptNameMap(ctx, p.TenantID)
+
+	// 角色/岗位按页批量查询（一次 IN），避免每行两次查询造成 2N 放大
+	userIDs := make([]uint64, 0, len(users))
+	for _, u := range users {
+		userIDs = append(userIDs, u.ID)
+	}
+	roleMap, _ := s.Repo.RoleIDsOfUsers(ctx, userIDs)
+	postMap, _ := s.Repo.PostIDsOfUsers(ctx, userIDs)
+
 	out := make([]UserVO, 0, len(users))
 	for _, u := range users {
 		vo := UserVO{User: u, DeptName: deptNames[u.DeptID]}
@@ -95,10 +104,8 @@ func (s *Service) ListUsers(ctx context.Context, q *repository.UserQuery, p *pri
 			vo.Mobile = mask.Mobile(u.Mobile)
 			vo.Email = mask.Email(u.Email)
 		}
-		roleIDs, _ := s.Repo.RoleIDsOfUser(ctx, u.ID)
-		vo.RoleIDs = roleIDs
-		postIDs, _ := s.Repo.PostIDsOfUser(ctx, u.ID)
-		vo.PostIDs = postIDs
+		vo.RoleIDs = roleMap[u.ID]
+		vo.PostIDs = postMap[u.ID]
 		out = append(out, vo)
 	}
 	s.fillRoleNames(ctx, out)

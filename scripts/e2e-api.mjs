@@ -1013,6 +1013,21 @@ async function main() {
       `msg=${weak2.json?.message}`
     )
   }
+  // 在线会话与工作台统计一致性（回归防护：曾因逐条查用户表导致大幅放大查询）
+  {
+    const online = await api('/api/v1/monitor/online', { token })
+    const summary = await api('/api/v1/dashboard/summary', { token })
+    const listLen = (online.json?.data || []).length
+    check(
+      '在线会话与工作台 onlineCount 一致（且在线用户资料已批量补齐）',
+      online.json?.code === 0 &&
+        summary.json?.code === 0 &&
+        listLen > 0 &&
+        summary.json?.data?.onlineCount === listLen &&
+        (online.json.data || []).every((u) => typeof u.userId === 'string'),
+      `list=${listLen} onlineCount=${summary.json?.data?.onlineCount}`
+    )
+  }
   // 代码生成器
   {
     const tables = await api('/api/v1/tool/gen/tables', { token })

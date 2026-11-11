@@ -16,13 +16,14 @@ import (
 
 // 缓存 key
 const (
-	keyPrincipal        = "auth:principal:%s:%d" // 用户主体（权限/部门范围），前缀为全局权限版本
-	keyPrincipalVersion = "auth:principal:ver"   // 全局权限版本（菜单/角色/部门变更时自增）
-	keyRefresh          = "auth:refresh:%s"      // 刷新令牌 jti
-	keyRefreshUser      = "auth:refresh:user:%d" // 用户持有的 refresh jti 集合（用于整体撤销）
-	keyBlacklist        = "auth:blacklist:%s"    // 已退出/失效的 access jti
-	keySSO              = "auth:sso:%d"          // 单点登录当前 jti
-	keyOnline           = "auth:online"          // 在线用户集合
+	keyPrincipal        = "auth:principal:%s:%d"  // 用户主体（权限/部门范围），前缀为全局权限版本
+	keyPrincipalVersion = "auth:principal:ver"    // 全局权限版本（菜单/角色/部门变更时自增）
+	keyRefresh          = "auth:refresh:%s"       // 刷新令牌 jti
+	keyRefreshUser      = "auth:refresh:user:%d"  // 用户持有的 refresh jti 集合（用于整体撤销）
+	keyBlacklist        = "auth:blacklist:%s"     // 已退出/失效的 access jti
+	keySSO              = "auth:sso:%d"           // 单点登录当前 jti
+	keyOnline           = "auth:online"           // 在线用户集合（成员：uid:jti:ts）
+	keyOnlineIdx        = "auth:online:idx:%d:%s" // 在线会话索引：uid+jti → 集合成员（退出时精确删除）
 	principalTTL        = 30 * time.Minute
 )
 

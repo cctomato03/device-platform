@@ -146,8 +146,10 @@ func (s *Service) issueTokens(ctx context.Context, user *entity.User) (*TokenRes
 	if s.Cfg.Auth.SingleSession {
 		_ = s.Cache.Set(ctx, fmt.Sprintf(keySSO, user.ID), access.JTI, s.JWT.RefreshTTL())
 	}
-	// 在线用户集合
-	_ = s.Cache.SetAdd(ctx, keyOnline, fmt.Sprintf("%d:%s:%d", user.ID, access.JTI, time.Now().Unix()))
+	// 在线用户集合 + 会话索引（退出时按 uid+jti 精确删除，避免全量扫描集合）
+	member := fmt.Sprintf("%d:%s:%d", user.ID, access.JTI, time.Now().Unix())
+	_ = s.Cache.SetAdd(ctx, keyOnline, member)
+	_ = s.Cache.Set(ctx, fmt.Sprintf(keyOnlineIdx, user.ID, access.JTI), member, s.JWT.RefreshTTL())
 
 	p, err := s.loadPrincipal(ctx, user)
 	if err != nil {
@@ -230,15 +232,29 @@ func (s *Service) CheckSingleSession(ctx context.Context, uid uint64, jti string
 }
 
 // removeOnline 从在线集合移除。
+//
+// 优先用会话索引（uid+jti → 成员）精确删除，O(1)；
+// 索引缺失时（例如升级前的历史会话）退回一次集合扫描，并且只发一次批量 SREM。
 func (s *Service) removeOnline(ctx context.Context, userID uint64, jti string) {
+	idxKey := fmt.Sprintf(keyOnlineIdx, userID, jti)
+	if member, ok := s.Cache.Get(ctx, idxKey); ok && member != "" {
+		_ = s.Cache.SetRemove(ctx, keyOnline, member)
+		_ = s.Cache.Del(ctx, idxKey)
+		return
+	}
+	prefix := fmt.Sprintf("%d:%s", userID, jti)
+	stale := make([]string, 0, 4)
 	for _, m := range s.Cache.SetMembers(ctx, keyOnline) {
-		if strings.HasPrefix(m, fmt.Sprintf("%d:%s", userID, jti)) {
-			_ = s.Cache.SetRemove(ctx, keyOnline, m)
+		if strings.HasPrefix(m, prefix) {
+			stale = append(stale, m)
 		}
+	}
+	if len(stale) > 0 {
+		_ = s.Cache.SetRemove(ctx, keyOnline, stale...)
 	}
 }
 
-// OnlineUsers 在线用户列表（来自 Redis 集合）。
+// OnlineUser 在线会话条目（用户资料由批量查询补齐）。
 type OnlineUser struct {
 	UserID    uint64 `json:"userId,string"`
 	JTI       string `json:"jti"`
@@ -247,9 +263,14 @@ type OnlineUser struct {
 	Nickname  string `json:"nickname"`
 }
 
+// OnlineUsers 在线用户列表（来自 Redis 集合）。
+//
+// 性能约定：用户信息必须**一次 IN 批量查询**，不能在循环里逐个查库。
+// 早期实现每个会话查一次用户表，350 个在线会话会让接口放大到 350 次查询（远程库上十几秒）。
 func (s *Service) OnlineUsers(ctx context.Context) ([]OnlineUser, error) {
 	members := s.Cache.SetMembers(ctx, keyOnline)
 	out := make([]OnlineUser, 0, len(members))
+	uids := make([]uint64, 0, len(members))
 	for _, m := range members {
 		parts := strings.Split(m, ":")
 		if len(parts) < 3 {
@@ -259,14 +280,33 @@ func (s *Service) OnlineUsers(ctx context.Context) ([]OnlineUser, error) {
 		fmt.Sscanf(parts[0], "%d", &uid)
 		var ts int64
 		fmt.Sscanf(parts[2], "%d", &ts)
-		item := OnlineUser{UserID: uid, JTI: parts[1], LoginTime: ts}
-		if u, err := s.Repo.FindUserByID(ctx, uid); err == nil && u != nil {
-			item.Username = u.Username
-			item.Nickname = u.Nickname
+		out = append(out, OnlineUser{UserID: uid, JTI: parts[1], LoginTime: ts})
+		if uid > 0 {
+			uids = append(uids, uid)
 		}
-		out = append(out, item)
+	}
+	if len(uids) == 0 {
+		return out, nil
+	}
+
+	users, err := s.Repo.FindUsersByIDs(ctx, uids)
+	if err != nil {
+		return nil, errs.ErrDB.WithErr(err)
+	}
+	for i := range out {
+		if u, ok := users[out[i].UserID]; ok && u != nil {
+			out[i].Username = u.Username
+			out[i].Nickname = u.Nickname
+		}
 	}
 	return out, nil
+}
+
+// OnlineCount 在线会话数（只读 Redis 集合大小，不查用户表）。
+//
+// 工作台只需要数量，没必要把会话与用户全查出来——这是「统计卡片一直转圈」的直接原因之一。
+func (s *Service) OnlineCount(ctx context.Context) int {
+	return len(s.Cache.SetMembers(ctx, keyOnline))
 }
 
 // KickUser 强制下线：access 拉黑 + refresh 全部作废。

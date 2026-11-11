@@ -368,7 +368,7 @@ func (s *Service) jobCleanSession(_ context.Context, params map[string]any) (str
 	ttlDays := intParam(params, "days", 7)
 	limit := time.Now().AddDate(0, 0, -ttlDays).Unix()
 	members := s.Cache.SetMembers(context.Background(), keyOnline)
-	removed := 0
+	stale := make([]string, 0, len(members))
 	for _, m := range members {
 		parts := strings.Split(m, ":")
 		if len(parts) < 3 {
@@ -376,11 +376,18 @@ func (s *Service) jobCleanSession(_ context.Context, params map[string]any) (str
 		}
 		ts, err := strconv.ParseInt(parts[2], 10, 64)
 		if err != nil || ts < limit {
-			s.Cache.SetRemove(context.Background(), keyOnline, m)
-			removed++
+			stale = append(stale, m)
+			// 同时清掉会话索引，避免退出登录时再回扫
+			if len(parts) >= 2 {
+				_ = s.Cache.Del(context.Background(), fmt.Sprintf(keyOnlineIdx, parseUintOrZero(parts[0]), parts[1]))
+			}
 		}
 	}
-	return fmt.Sprintf("在线会话清理完成：共 %d 条，移除 %d 条", len(members), removed), nil
+	// 一次批量 SREM：避免每个成员一次 Redis 往返
+	if err := s.Cache.SetRemove(context.Background(), keyOnline, stale...); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("在线会话清理完成：共 %d 条，移除 %d 条", len(members), len(stale)), nil
 }
 
 // jobCleanTempFile 清理临时文件（bizType=temp 且超过保留天数）。
@@ -438,6 +445,14 @@ func parseParams(raw string) map[string]any {
 	return out
 }
 
+// parseUintOrZero 把字符串解析为 uint64，失败返回 0（用于解析会话成员里的用户 ID）。
+func parseUintOrZero(s string) uint64 {
+	v, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return v
+}
 func intParam(params map[string]any, key string, def int) int {
 	if params == nil {
 		return def

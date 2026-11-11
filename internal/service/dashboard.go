@@ -95,10 +95,8 @@ func (s *Service) Dashboard(ctx context.Context, tenantID uint64) (*DashboardSum
 		})
 	}
 
-	online := 0
-	if users, err := s.OnlineUsers(ctx); err == nil {
-		online = len(users)
-	}
+	// 只取数量：避免为了一个数字把在线会话与用户表全查一遍
+	online := s.OnlineCount(ctx)
 
 	return &DashboardSummary{
 		Users:        counts.Users,

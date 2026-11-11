@@ -156,6 +156,57 @@ func (r *Repo) SoftDeleteUser(ctx context.Context, id uint64) error {
 	})
 }
 
+// FindUsersByIDs 批量查用户（一次 IN 查询），返回 id → 用户 的映射。
+//
+// 用于「在线会话 / 列表」这类一次要展示 N 个用户的场景：避免在循环里逐条查库（N+1）。
+// 不存在的 id 不会出现在返回的 map 中，调用方按需判空。
+func (r *Repo) FindUsersByIDs(ctx context.Context, ids []uint64) (map[uint64]*entity.User, error) {
+	out := make(map[uint64]*entity.User, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var users []entity.User
+	if err := r.DB.WithContext(ctx).Where("id IN ?", ids).Find(&users).Error; err != nil {
+		return nil, err
+	}
+	for i := range users {
+		out[users[i].ID] = &users[i]
+	}
+	return out, nil
+}
+
+// RoleIDsOfUsers 批量查「用户 → 角色 ID 列表」（一次 IN 查询）。
+func (r *Repo) RoleIDsOfUsers(ctx context.Context, userIDs []uint64) (map[uint64][]uint64, error) {
+	out := make(map[uint64][]uint64, len(userIDs))
+	if len(userIDs) == 0 {
+		return out, nil
+	}
+	var rows []entity.UserRole
+	if err := r.DB.WithContext(ctx).Where("user_id IN ?", userIDs).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.UserID] = append(out[row.UserID], row.RoleID)
+	}
+	return out, nil
+}
+
+// PostIDsOfUsers 批量查「用户 → 岗位 ID 列表」（一次 IN 查询）。
+func (r *Repo) PostIDsOfUsers(ctx context.Context, userIDs []uint64) (map[uint64][]uint64, error) {
+	out := make(map[uint64][]uint64, len(userIDs))
+	if len(userIDs) == 0 {
+		return out, nil
+	}
+	var rows []entity.UserPost
+	if err := r.DB.WithContext(ctx).Where("user_id IN ?", userIDs).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.UserID] = append(out[row.UserID], row.PostID)
+	}
+	return out, nil
+}
+
 // RoleIDsOfUser 用户角色 ID 列表。
 func (r *Repo) RoleIDsOfUser(ctx context.Context, userID uint64) ([]uint64, error) {
 	var ids []uint64

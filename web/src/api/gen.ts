@@ -6,9 +6,6 @@ export function fetchGenTables() {
 }
 
 /** 表字段详情 */
-export function fetchGenTableDetail(table: string) {
-  return request.get<WebBasic.GenTable>({ url: `/api/v1/tool/gen/tables/${table}` })
-}
 
 /** 预览生成代码 */
 export function fetchGenPreview(table: string) {

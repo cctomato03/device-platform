@@ -259,12 +259,8 @@
         await router.replace('/')
       }
     } catch (error) {
-      // 处理 HttpError
-      if (error instanceof HttpError) {
-        // console.log(error.code)
-      } else {
-        // 处理非 HttpError
-        // ElMessage.error('登录失败，请稍后重试')
+      // HttpError 的错误提示已由 http 层统一弹出（后端业务消息优先），这里只处理非预期异常
+      if (!(error instanceof HttpError)) {
         console.error('[Login] Unexpected error:', error)
       }
       // 登录失败后刷新验证码，避免重复使用同一码
