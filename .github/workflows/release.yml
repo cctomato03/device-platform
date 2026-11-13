@@ -1,0 +1,129 @@
+name: release
+
+# 打 tag 即发布：推送 v* 标签后自动构建 linux/amd64 + linux/arm64，
+# 并把二进制安装包、内置插件包、校验和挂到该 tag 的 GitHub Release 上。
+#
+# 也可在 Actions 页面手动触发（workflow_dispatch），用于补发某个 tag。
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GOFLAGS: -mod=mod
+
+jobs:
+  build:
+    name: build-release
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout（需完整历史，git describe 才能取到 tag）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: 打印版本信息
+        run: |
+          echo "ref=$GITHUB_REF  tag=${GITHUB_REF_NAME}"
+          git describe --tags --always
+
+      - name: 构建前端 + 双架构二进制 + 插件包
+        run: bash scripts/build-linux.sh
+
+      - name: 生成发布包（含安装脚本 / 文档 / 内置插件 / SHA256SUMS）
+        run: bash scripts/package-release.sh "${GITHUB_REF_NAME}" dist
+
+      - name: 冒烟校验产物
+        run: |
+          set -e
+          ls -lh dist/release
+          file dist/device-platform-linux-amd64 | tee /tmp/file-amd64.txt
+          file dist/device-platform-linux-arm64 | tee /tmp/file-arm64.txt
+          grep -q "x86-64" /tmp/file-amd64.txt
+          grep -q "aarch64\|ARM aarch64" /tmp/file-arm64.txt
+          # 安装包内必须包含关键文件
+          tar -tzf "dist/release/device-platform-${GITHUB_REF_NAME}-linux-amd64.tar.gz" | grep -q "bin/device-platform"
+          tar -tzf "dist/release/device-platform-${GITHUB_REF_NAME}-linux-amd64.tar.gz" | grep -q "install.sh"
+
+      - name: 上传构建产物（即使发布失败也可从这里取）
+        uses: actions/upload-artifact@v4
+        with:
+          name: device-platform-${{ github.ref_name }}
+          path: |
+            dist/release/*.tar.gz
+            dist/release/*.zip
+            dist/release/SHA256SUMS
+          retention-days: 30
+
+      - name: 发布到 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          # rc/beta/alpha 自动标记为预发布
+          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          generate_release_notes: true
+          body: |
+            ## 设备管理平台 ${{ github.ref_name }}
+
+            单二进制（前端已内嵌）、SQLite 存储、零外部依赖；插件市场支持原生进程与 docker 两种运行时。
+
+            ### 下载
+
+            | 架构 | 包名 | 适用 |
+            | --- | --- | --- |
+            | x86_64 | `device-platform-${{ github.ref_name }}-linux-amd64.tar.gz` | Intel/AMD 设备、WSL2、PC |
+            | arm64 | `device-platform-${{ github.ref_name }}-linux-arm64.tar.gz` | ARM 网关/边缘盒（aarch64） |
+
+            校验：`sha256sum -c SHA256SUMS`
+
+            ### 安装（以 arm64 为例）
+
+            ```bash
+            tar -xzf device-platform-${{ github.ref_name }}-linux-arm64.tar.gz
+            cd device-platform-${{ github.ref_name }}-linux-arm64
+            sudo bash install.sh -y --dir /opt/device-platform --port 8090 --admin-password 'Admin@123456'
+            # 浏览器打开 http://<设备IP>:8090
+            ```
+
+            卸载：`sudo bash install.sh --uninstall`（加 `--purge` 连数据一起删）；
+            升级：`sudo bash install.sh --upgrade --binary ./bin/device-platform`。
+
+            ### 说明
+
+            - 安装包内 `plugins-bundled/frp` 是 FRP 内网穿透插件（**不含** frpc 二进制，请按该目录 README 放入对应架构的 frpc 后再启用）。
+            - 网络/防火墙/SNMP/动态路由等「下发类」功能需要 Linux + root，并安装对应系统包（页面里有「安装依赖」按钮）。
+          files: |
+            dist/release/*.tar.gz
+            dist/release/*.zip
+            dist/release/SHA256SUMS
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

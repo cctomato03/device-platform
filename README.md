@@ -44,9 +44,23 @@ cd web && pnpm install && pnpm dev
 
 ```bash
 bash scripts/build-linux.sh          # 前端 + linux/amd64 + linux/arm64 + 插件包 → dist/
+bash scripts/package-release.sh      # 打成发布包 → dist/release/*.tar.gz + SHA256SUMS
 ```
 
-### 2.3 设备上安装
+### 2.3 发布（GitHub Actions）
+
+推一个 `v*` 标签即自动构建并发布到该标签的 Release：
+
+```bash
+git tag v1.0.0-rc && git push origin v1.0.0-rc
+```
+
+流水线（`.github/workflows/release.yml`）会：构建前端 → 交叉编译 linux/amd64 与 linux/arm64 →
+打包成「解压即用」的安装包（含 `install.sh`、systemd 单元、配置样例、文档、内置插件）→
+上传 tar.gz / 插件 zip / `SHA256SUMS` 到 Release（`rc`/`beta` 自动标记为预发布）。
+日常 push / PR 由 `.github/workflows/ci.yml` 跑 vet + 单测 + 前端类型检查 + 双架构编译校验。
+
+### 2.4 设备上安装
 
 ```bash
 sudo bash install.sh -y --dir /opt/device-platform --port 8090 --admin-password 'Admin@123456'

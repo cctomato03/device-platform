@@ -110,7 +110,10 @@ fi
 
 # ------------------------------ 定位二进制 ------------------------------
 if [ -z "$BINARY" ]; then
+  # 依次尝试：发布包布局（bin/device-platform）、脚本同级、仓库 dist 布局
   for cand in \
+    "$(dirname "$0")/bin/device-platform" \
+    "$(dirname "$0")/device-platform" \
     "$(dirname "$0")/$BIN_NAME" \
     "$(dirname "$0")/device-platform-server" \
     "$(dirname "$0")/../dist/$BIN_NAME" \
@@ -118,7 +121,10 @@ if [ -z "$BINARY" ]; then
     if [ -f "$cand" ]; then BINARY="$cand"; break; fi
   done
 fi
-[ -n "$BINARY" ] && [ -f "$BINARY" ] || die "未找到二进制文件，请用 --binary 指定，或把 $BIN_NAME 放在脚本同级目录"
+if [ -z "$BINARY" ] || [ ! -f "$BINARY" ]; then
+  die "未找到二进制文件。已尝试：bin/device-platform、./device-platform、./$BIN_NAME、./device-platform-server、../dist/$BIN_NAME
+       可用 --binary /path/to/device-platform 显式指定（架构应为 $ARCH）"
+fi
 log "使用二进制：$BINARY"
 
 # ------------------------------ 交互式补充 ------------------------------

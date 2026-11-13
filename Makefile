@@ -44,6 +44,11 @@ market-index: plugin
 	python3 scripts/gen-plugin-index.py --dir dist/plugins --base-url $(BASE_URL) \
 		--out dist/plugins/plugin-index.json $(if $(MARKET_KEY),--key $(MARKET_KEY),)
 
+# 本地生成发布包（等价 CI 的 release 产物：dist/release/*.tar.gz + SHA256SUMS）
+release:
+	bash scripts/build-linux.sh --skip-web
+	bash scripts/package-release.sh "$$(git describe --tags --always 2>/dev/null || echo dev)" dist
+
 test:
 	go vet ./...
 	go test ./... -count=1

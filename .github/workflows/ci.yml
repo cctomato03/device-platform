@@ -1,0 +1,94 @@
+name: ci
+
+# 日常校验：push / PR 时跑后端 vet+test、前端构建+类型检查、Linux 双架构可编译性。
+
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend (vet + test)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test ./... -count=1
+
+  frontend:
+    name: frontend (build + typecheck)
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: vite build（同时生成 auto-import 类型声明）
+        run: pnpm exec vite build
+      - name: vue-tsc 类型检查
+        run: pnpm exec vue-tsc --noEmit
+
+  cross-build:
+    name: cross build (${{ matrix.arch }})
+    runs-on: ubuntu-22.04
+    needs: [backend]
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: 前端（复用同一份构建产物，后端内嵌）
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: 构建前端
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec vite build
+      - name: 编译 linux/${{ matrix.arch }}
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          rm -rf internal/webui/dist && mkdir -p internal/webui/dist
+          cp -r web/dist/. internal/webui/dist/
+          go build -tags embed -trimpath -ldflags "-s -w -X main.Version=ci" -o /tmp/device-platform ./cmd/server
+          file /tmp/device-platform
