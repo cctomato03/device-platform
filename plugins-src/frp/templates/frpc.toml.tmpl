@@ -1,0 +1,37 @@
+{{/* frpc 配置模板（frp >= 0.52 的 TOML 格式）
+   变量说明：
+   - 顶层变量来自插件配置（manifest.schema）
+   - .platform.dataDir / .platform.logDir 等由平台注入
+*/ -}}
+serverAddr = "{{ .serverAddr }}"
+serverPort = {{ .serverPort }}
+{{- if .user }}
+user = "{{ .user }}"
+{{- end }}
+
+{{- if .authToken }}
+auth.method = "token"
+auth.token = "{{ .authToken }}"
+{{- end }}
+
+transport.tls.enable = {{ .tlsEnable }}
+
+log.level = "{{ .logLevel }}"
+log.maxDays = 3
+
+{{- range .proxies }}
+
+[[proxies]]
+name = "{{ .name }}"
+type = "{{ .type }}"
+{{- if .localIP }}
+localIP = "{{ .localIP }}"
+{{- end }}
+localPort = {{ .localPort }}
+{{- if or (eq .type "tcp") (eq .type "udp") }}
+remotePort = {{ .remotePort }}
+{{- end }}
+{{- if .customDomains }}
+customDomains = [{{ range $i, $d := (split .customDomains ",") }}{{ if $i }}, {{ end }}"{{ trim $d }}"{{ end }}]
+{{- end }}
+{{- end }}

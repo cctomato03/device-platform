@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"web-basic/pkg/id"
+	"device-platform/pkg/id"
 )
 
 // 租约默认参数：TTL 60s，心跳间隔 20s（TTL 的 1/3，容忍两次心跳抖动）。

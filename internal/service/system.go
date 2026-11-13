@@ -15,12 +15,12 @@ import (
 	"strings"
 	"time"
 
-	"web-basic/internal/logger"
-	"web-basic/internal/model/entity"
-	"web-basic/internal/principal"
-	"web-basic/internal/repository"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/id"
+	"device-platform/internal/logger"
+	"device-platform/internal/model/entity"
+	"device-platform/internal/principal"
+	"device-platform/internal/repository"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/id"
 )
 
 // ============================ 岗位 ============================

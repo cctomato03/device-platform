@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"web-basic/internal/model/entity"
-	"web-basic/internal/principal"
-	"web-basic/pkg/crypto"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/id"
-	"web-basic/pkg/jwt"
+	"device-platform/internal/model/entity"
+	"device-platform/internal/principal"
+	"device-platform/pkg/crypto"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/id"
+	"device-platform/pkg/jwt"
 )
 
 // LoginReq 登录入参。

@@ -8,9 +8,9 @@ import (
 
 	"gorm.io/gorm"
 
-	"web-basic/internal/model/entity"
-	"web-basic/internal/model/scope"
-	"web-basic/internal/principal"
+	"device-platform/internal/model/entity"
+	"device-platform/internal/model/scope"
+	"device-platform/internal/principal"
 )
 
 // UserQuery 用户列表查询条件。

@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"web-basic/internal/model/entity"
+	"device-platform/internal/model/entity"
 )
 
 // ListJobs 定时任务列表。

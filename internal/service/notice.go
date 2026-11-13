@@ -9,13 +9,13 @@ import (
 
 	"gorm.io/gorm"
 
-	"web-basic/internal/audit"
-	"web-basic/internal/model/entity"
-	"web-basic/internal/model/scope"
-	"web-basic/internal/principal"
-	"web-basic/internal/repository"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/id"
+	"device-platform/internal/audit"
+	"device-platform/internal/model/entity"
+	"device-platform/internal/model/scope"
+	"device-platform/internal/principal"
+	"device-platform/internal/repository"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/id"
 )
 
 // NoticeQuery 公告列表查询。

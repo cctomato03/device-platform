@@ -1,114 +1,40 @@
-# 前后端一体部署（单可执行文件镜像）+ MySQL 8.0 + Redis
-# 使用：docker compose -f deploy/docker-compose.yml up -d --build
+# 设备管理平台 · 容器编排（可选，设备上更推荐 systemd 安装）
 #
-# 环境变量命名规则：viper 前缀 APP + 配置路径用 __ 分隔，例如 mysql.dsn → APP__MYSQL__DSN。
-# 镜像内 configs/config.yaml 是"本机开发"默认值（127.0.0.1:3307），容器里必须用下面的环境变量覆盖。
+# 平台零外部依赖：数据库是嵌入式 SQLite，缓存是进程内实现，不再需要 MySQL / Redis。
 #
-# 宿主机端口都可通过环境变量改（避免和本机已装的 MySQL/Redis 冲突）：
-#   APP_PORT=8080 MYSQL_PORT=3307 REDIS_PORT=6380 docker compose -f deploy/docker-compose.yml up -d
-name: web-basic
-
+#   docker compose -f deploy/docker-compose.yml up -d --build
+#
+# 注意：
+#   - 设备管理（网络接口/静态路由/防火墙/NAT/QoS）需要 NET_ADMIN、NET_RAW 能力；
+#   - 插件若要管理宿主机或使用 docker 运行时，需要挂载 /var/run/docker.sock；
+#   - /data 卷存放数据库、日志、插件与上传文件，备份该目录即可。
 services:
-  app:
+  device-platform:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-      args:
-        GOPROXY: https://goproxy.cn,direct
-    image: web-basic:latest
-    container_name: web-basic-app
+    image: device-platform:latest
+    container_name: device-platform
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - '8090:8090'
     environment:
-      TZ: Asia/Shanghai
-      # 运行模式与端口（覆盖镜像内的开发默认值）
       APP__APP__ENV: prod
       APP__APP__MODE: release
-      APP__APP__PORT: "8080"
-      # 数据库：容器内用服务名访问；clientFoundRows=true 不可省略
-      # （让驱动返回"匹配行数"，代码才能用"影响行数=0"判定记录不存在）
-      APP__MYSQL__DSN: "root:root123@tcp(mysql:3306)/web_basic?charset=utf8mb4&parseTime=True&loc=Local&timeout=10s&clientFoundRows=true"
-      # Redis
-      APP__REDIS__ADDR: "redis:6379"
-      APP__REDIS__PASSWORD: ""
-      # 文件存储：容器内使用本地磁盘（对应 /app/storage 挂载卷）
-      APP__STORAGE__TYPE: local
-      # 是否允许 Shell 脚本型定时任务（默认关闭；打开等于允许后台在容器内执行任意命令）
-      APP__SCHEDULER__SHELL_ENABLED: "${SCHEDULER_SHELL_ENABLED:-false}"
-      # 业务系统对接（开放接口）：默认关闭；打开需同时配置 API Key
-      APP__INTEGRATION__ENABLED: "${INTEGRATION_ENABLED:-false}"
-      APP__INTEGRATION__API_KEY: "${INTEGRATION_API_KEY:-}"
-      APP__INTEGRATION__TENANT_ID: "1"
-      # 生产务必覆盖：JWT 密钥（>=32 位随机串）与管理员初始密码
-      APP__JWT__SECRET: "change-me-please-use-32chars-random-secret"
-      APP__JWT__SECRET_PREVIOUS: ""
-      APP__APP__ADMIN_PASSWORD: Admin@123456
+      APP__JWT__SECRET: 'please-change-me-to-a-random-32+-char-secret'
+      APP__APP__ADMIN_PASSWORD: 'Admin@123456'
     volumes:
-      - app-logs:/app/logs
-      - app-storage:/app/storage
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - ./data:/data
+      # 需要管理宿主机网络/防火墙时打开下面几行（privileged 更简单，但权限更大）
+      # - /var/run/docker.sock:/var/run/docker.sock
+      # - /etc/localtime:/etc/localtime:ro
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_MODULE
+    network_mode: host
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
-      interval: 15s
+      test: ['CMD', '/app/device-platform', '-v']
+      interval: 30s
       timeout: 5s
-      start_period: 20s
-      retries: 5
-    networks:
-      - web-basic
-
-  mysql:
-    image: mysql:8.0
-    container_name: web-basic-mysql
-    restart: unless-stopped
-    command: >
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_general_ci
-      --default-authentication-plugin=mysql_native_password
-      --lower_case_table_names=0
-    environment:
-      MYSQL_ROOT_PASSWORD: root123
-      MYSQL_DATABASE: web_basic
-      TZ: Asia/Shanghai
-    ports:
-      - "${MYSQL_PORT:-3307}:3306"
-    volumes:
-      - mysql-data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot123"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks:
-      - web-basic
-
-  redis:
-    image: redis:7-alpine
-    container_name: web-basic-redis
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "${REDIS_PORT:-6380}:6379"
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    networks:
-      - web-basic
-
-volumes:
-  mysql-data:
-  redis-data:
-  app-logs:
-  app-storage:
-
-networks:
-  web-basic:
-    driver: bridge
+      retries: 3

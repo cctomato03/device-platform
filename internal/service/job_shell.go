@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"web-basic/internal/model/entity"
-	"web-basic/pkg/errs"
+	"device-platform/internal/model/entity"
+	"device-platform/pkg/errs"
 )
 
 // Shell 脚本型定时任务（job_type = 3）。

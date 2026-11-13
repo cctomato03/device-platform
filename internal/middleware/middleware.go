@@ -17,15 +17,16 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"web-basic/internal/audit"
-	"web-basic/internal/logger"
-	"web-basic/internal/metrics"
-	"web-basic/internal/principal"
-	"web-basic/internal/service"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/id"
-	"web-basic/pkg/jwt"
-	"web-basic/pkg/response"
+	"device-platform/internal/audit"
+	"device-platform/internal/logger"
+	"device-platform/internal/metrics"
+	"device-platform/internal/principal"
+	"device-platform/internal/service"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/id"
+	"device-platform/pkg/jwt"
+	"device-platform/pkg/response"
+	"device-platform/pkg/version"
 )
 
 // Trace 生成/透传 traceId，并记录访问日志。
@@ -246,6 +247,57 @@ func OperLog(svc *service.Service) gin.HandlerFunc {
 	}
 }
 
+// AccessLog 访问日志：记录所有 API 请求到 sys_access_log（设备端的「访问日志」页）。
+//
+// 与操作日志的区别：这里只关心「谁、什么时候、访问了哪个接口、耗时、状态码」，
+// 不做字段级 diff；为了不拖慢接口，写入走异步 goroutine。
+// 静态资源、健康检查、指标抓取不入库，避免日志洪水。
+func AccessLog(svc *service.Service) gin.HandlerFunc {
+	skipPrefixes := []string{"/static", "/healthz", "/readyz", "/metrics", "/assets", "/swagger"}
+	return func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+
+		path := c.Request.URL.Path
+		if !strings.HasPrefix(path, "/api/") {
+			return
+		}
+		for _, p := range skipPrefixes {
+			if strings.HasPrefix(path, p) {
+				return
+			}
+		}
+
+		entry := map[string]any{
+			"id":          id.Next(),
+			"trace_id":    c.GetString("traceId"),
+			"ip":          c.ClientIP(),
+			"method":      c.Request.Method,
+			"path":        path,
+			"status":      c.Writer.Status(),
+			"cost_ms":     int(time.Since(start).Milliseconds()),
+			"bytes_out":   c.Writer.Size(),
+			"user_agent":  truncate(c.GetHeader("User-Agent"), 300),
+			"user_id":     principalUserID(c),
+			"access_time": time.Now().Format("2006-01-02 15:04:05"),
+		}
+		ctx := context.WithoutCancel(c.Request.Context())
+		go func() {
+			if err := svc.Repo.DB.WithContext(ctx).Table("sys_access_log").Create(entry).Error; err != nil {
+				logger.S().Debugw("write access log failed", "err", err)
+			}
+		}()
+	}
+}
+
+// principalUserID 尽量取当前登录用户（未登录接口返回 0）。
+func principalUserID(c *gin.Context) uint64 {
+	if p, ok := principal.Get(c); ok && p != nil {
+		return p.UserID
+	}
+	return 0
+}
+
 // Metrics 采集 HTTP 请求指标（路由用 gin FullPath，避免高基数）。
 func Metrics() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -266,34 +318,17 @@ func SecurityHeaders() gin.HandlerFunc {
 	}
 }
 
-// buildInfo 编译期版本信息，由 main 在启动时注入（供 /version 排查与探针使用）。
-var buildInfo = struct {
-	Version   string
-	Commit    string
-	BuildTime string
-}{Version: "dev", Commit: "none", BuildTime: "unknown"}
-
 // BuildVersion 构建版本号。
-func BuildVersion() string { return buildInfo.Version }
+func BuildVersion() string { return version.Version }
 
 // BuildCommit 构建提交号。
-func BuildCommit() string { return buildInfo.Commit }
+func BuildCommit() string { return version.Commit }
 
 // BuildTime 构建时间。
-func BuildTime() string { return buildInfo.BuildTime }
+func BuildTime() string { return version.BuildTime }
 
-// SetBuildInfo 注入 -ldflags 写入的版本信息。
-func SetBuildInfo(version, commit, buildTime string) {
-	if version != "" {
-		buildInfo.Version = version
-	}
-	if commit != "" {
-		buildInfo.Commit = commit
-	}
-	if buildTime != "" {
-		buildInfo.BuildTime = buildTime
-	}
-}
+// SetBuildInfo 注入 -ldflags 写入的版本信息（main 启动时调用一次）。
+func SetBuildInfo(v, commit, buildTime string) { version.Set(v, commit, buildTime) }
 
 // Health 提供健康检查与就绪检查所需依赖。
 type Health struct {
@@ -308,9 +343,9 @@ func (h *Health) Register(r *gin.Engine) {
 	})
 	r.GET("/version", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"version":   buildInfo.Version,
-			"commit":    buildInfo.Commit,
-			"buildTime": buildInfo.BuildTime,
+			"version":   version.Version,
+			"commit":    version.Commit,
+			"buildTime": version.BuildTime,
 			"uptime":    int64(time.Since(h.Boot).Seconds()),
 		})
 	})
@@ -325,7 +360,7 @@ func (h *Health) Register(r *gin.Engine) {
 		if !mysqlOK || !redisOK {
 			code = http.StatusServiceUnavailable
 		}
-		c.JSON(code, gin.H{"mysql": mysqlOK, "redis": redisOK})
+		c.JSON(code, gin.H{"database": mysqlOK, "cache": redisOK})
 	})
 }
 

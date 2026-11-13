@@ -3,10 +3,10 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 
-	"web-basic/internal/principal"
-	"web-basic/internal/service"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/response"
+	"device-platform/internal/principal"
+	"device-platform/internal/service"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/response"
 )
 
 // ============================ 工作中心（我的待办 / 消息 / 通知） ============================

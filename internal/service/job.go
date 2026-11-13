@@ -14,12 +14,12 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"web-basic/internal/audit"
-	"web-basic/internal/metrics"
-	"web-basic/internal/model/entity"
-	"web-basic/internal/repository"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/id"
+	"device-platform/internal/audit"
+	"device-platform/internal/metrics"
+	"device-platform/internal/model/entity"
+	"device-platform/internal/repository"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/id"
 )
 
 // JobQuery 任务列表查询。

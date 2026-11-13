@@ -7,12 +7,12 @@ import (
 
 	"gorm.io/gorm"
 
-	"web-basic/internal/config"
-	"web-basic/internal/logger"
-	"web-basic/internal/model/entity"
-	"web-basic/internal/repository"
-	"web-basic/pkg/crypto"
-	"web-basic/pkg/id"
+	"device-platform/internal/config"
+	"device-platform/internal/logger"
+	"device-platform/internal/model/entity"
+	"device-platform/internal/repository"
+	"device-platform/pkg/crypto"
+	"device-platform/pkg/id"
 )
 
 // ensureAdmin 首次启动时创建超级管理员账号。

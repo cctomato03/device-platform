@@ -44,7 +44,7 @@ Copy-Item -Recurse -Force web/dist/* internal/webui/dist/
 
 Write-Host "==> [3/3] compiling backend (-tags embed)" -ForegroundColor Cyan
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
-$exe = Join-Path $OutDir "web-basic-server.exe"
+$exe = Join-Path $OutDir "device-platform-server.exe"
 go build -tags embed -trimpath -ldflags "$ldflags" -o $exe ./cmd/server
 if ($LASTEXITCODE -ne 0) { throw "backend build failed" }
 

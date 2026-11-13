@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"web-basic/internal/model/entity"
-	"web-basic/internal/principal"
-	"web-basic/internal/repository"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/id"
-	"web-basic/pkg/jsonx"
+	"device-platform/internal/model/entity"
+	"device-platform/internal/principal"
+	"device-platform/internal/repository"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/id"
+	"device-platform/pkg/jsonx"
 )
 
 // MenuNode 菜单树节点。

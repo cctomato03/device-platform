@@ -8,12 +8,12 @@ import (
 
 	"gorm.io/gorm"
 
-	"web-basic/internal/model/entity"
-	"web-basic/internal/principal"
-	"web-basic/internal/repository"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/id"
-	"web-basic/pkg/jsonx"
+	"device-platform/internal/model/entity"
+	"device-platform/internal/principal"
+	"device-platform/internal/repository"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/id"
+	"device-platform/pkg/jsonx"
 )
 
 // DeptNode 部门树节点。
@@ -159,7 +159,8 @@ func (s *Service) UpdateDept(ctx context.Context, deptID uint64, req *DeptReq, p
 		if oldPath != newPath {
 			// 子树 ancestors 前缀替换：直接子部门的 ancestors 恰好等于 oldPath，
 			// 孙辈是 "oldPath,..."，两个条件都要覆盖，否则移动后部门树断裂。
-			return tx.Exec("UPDATE sys_dept SET ancestors = CONCAT(?, SUBSTRING(ancestors, ?)) WHERE ancestors = ? OR ancestors LIKE ?",
+			// SQLite 用 substr(x, n)（1 基）与 || 拼接，语义等价于 MySQL 的 SUBSTRING/CONCAT。
+			return tx.Exec("UPDATE sys_dept SET ancestors = ? || substr(ancestors, ?) WHERE ancestors = ? OR ancestors LIKE ?",
 				newPath, len(oldPath)+1, oldPath, oldPath+",%").Error
 		}
 		return nil

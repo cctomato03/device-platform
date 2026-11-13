@@ -20,9 +20,12 @@ web/*.local
 internal/webui/dist/
 
 # ================ 运行期产物 ================
-logs/
-storage/
-uploads/
+# 注意：只能忽略仓库根目录下的运行时目录，写成 `storage/` 会把
+# pkg/storage、web/src/utils/storage 这类源码目录一起忽略掉（曾导致缺文件）。
+/logs/
+/storage/
+/uploads/
+/runtime/
 *.log
 *.pid
 

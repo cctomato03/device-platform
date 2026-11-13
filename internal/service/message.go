@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"web-basic/internal/model/entity"
-	"web-basic/internal/principal"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/id"
+	"device-platform/internal/model/entity"
+	"device-platform/internal/principal"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/id"
 )
 
 // MessageQuery 我的站内信查询。

@@ -3,9 +3,9 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 
-	"web-basic/internal/principal"
-	"web-basic/internal/service"
-	"web-basic/pkg/response"
+	"device-platform/internal/principal"
+	"device-platform/internal/service"
+	"device-platform/pkg/response"
 )
 
 // GetSiteConfig 读取站点配置（公开接口与后台编辑页共用：登录页需要网站名称/logo/背景/注册开关）。

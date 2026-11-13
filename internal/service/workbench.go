@@ -9,11 +9,11 @@ import (
 
 	"gorm.io/gorm"
 
-	"web-basic/internal/model/entity"
-	"web-basic/internal/model/scope"
-	"web-basic/internal/principal"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/id"
+	"device-platform/internal/model/entity"
+	"device-platform/internal/model/scope"
+	"device-platform/internal/principal"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/id"
 )
 
 // 工作中心：待办 / 我的消息 / 我的通知，以及供业务系统对接的入站推送。

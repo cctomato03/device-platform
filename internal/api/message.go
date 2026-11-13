@@ -3,9 +3,9 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 
-	"web-basic/internal/principal"
-	"web-basic/internal/service"
-	"web-basic/pkg/response"
+	"device-platform/internal/principal"
+	"device-platform/internal/service"
+	"device-platform/pkg/response"
 )
 
 // ListMyMessages 我的站内信分页。

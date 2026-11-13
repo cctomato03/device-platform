@@ -7,9 +7,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"web-basic/internal/service"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/response"
+	"device-platform/internal/service"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/response"
 )
 
 // Handler 聚合全部 HTTP 处理器。

@@ -6,23 +6,26 @@ import (
 	"fmt"
 	"time"
 
-	"web-basic/internal/config"
-	"web-basic/internal/repository"
-	"web-basic/pkg/cache"
-	"web-basic/pkg/captcha"
-	"web-basic/pkg/jwt"
-	"web-basic/pkg/storage"
+	"device-platform/internal/config"
+	"device-platform/internal/paths"
+	"device-platform/internal/plugin"
+	"device-platform/internal/repository"
+	"device-platform/internal/sysinfo"
+	"device-platform/pkg/cache"
+	"device-platform/pkg/captcha"
+	"device-platform/pkg/jwt"
+	"device-platform/pkg/storage"
 )
 
 // 缓存 key
 const (
-	keyPrincipal        = "auth:principal:%s:%d"  // 用户主体（权限/部门范围），前缀为全局权限版本
-	keyPrincipalVersion = "auth:principal:ver"    // 全局权限版本（菜单/角色/部门变更时自增）
-	keyRefresh          = "auth:refresh:%s"       // 刷新令牌 jti
-	keyRefreshUser      = "auth:refresh:user:%d"  // 用户持有的 refresh jti 集合（用于整体撤销）
-	keyBlacklist        = "auth:blacklist:%s"     // 已退出/失效的 access jti
-	keySSO              = "auth:sso:%d"           // 单点登录当前 jti
-	keyOnline           = "auth:online"           // 在线用户集合（成员：uid:jti:ts）
+	keyPrincipal        = "auth:principal:%s:%d" // 用户主体（权限/部门范围），前缀为全局权限版本
+	keyPrincipalVersion = "auth:principal:ver"   // 全局权限版本（菜单/角色/部门变更时自增）
+	keyRefresh          = "auth:refresh:%s"      // 刷新令牌 jti
+	keyRefreshUser      = "auth:refresh:user:%d" // 用户持有的 refresh jti 集合（用于整体撤销）
+	keyBlacklist        = "auth:blacklist:%s"    // 已退出/失效的 access jti
+	keySSO              = "auth:sso:%d"          // 单点登录当前 jti
+	keyOnline           = "auth:online"          // 在线用户集合（成员：uid:jti:ts）
 	keyOnlineIdx        = "auth:online:idx:%d:%s" // 在线会话索引：uid+jti → 集合成员（退出时精确删除）
 	principalTTL        = 30 * time.Minute
 )
@@ -32,20 +35,14 @@ type Service struct {
 	Repo    *repository.Repo
 	Cache   *cache.Cache
 	Cfg     *config.Config
+	Paths   *paths.Layout
 	JWT     *jwt.Manager
 	Captcha *captcha.Service
 	Storage storage.Storage
-}
-
-func New(deps *Deps) *Service {
-	return &Service{
-		Repo:    deps.Repo,
-		Cache:   deps.Cache,
-		Cfg:     deps.Cfg,
-		JWT:     deps.JWT,
-		Captcha: deps.Captcha,
-		Storage: deps.Storage,
-	}
+	// Sys 硬件指标采集器（CPU/内存/磁盘/网络）
+	Sys *sysinfo.Collector
+	// Plugins 插件管理器（安装/启停/配置/日志）
+	Plugins *plugin.Manager
 }
 
 // Deps 依赖集合（由 bootstrap 装配）。
@@ -53,9 +50,26 @@ type Deps struct {
 	Repo    *repository.Repo
 	Cache   *cache.Cache
 	Cfg     *config.Config
+	Paths   *paths.Layout
 	JWT     *jwt.Manager
 	Captcha *captcha.Service
 	Storage storage.Storage
+	Sys     *sysinfo.Collector
+	Plugins *plugin.Manager
+}
+
+func New(deps *Deps) *Service {
+	return &Service{
+		Repo:    deps.Repo,
+		Cache:   deps.Cache,
+		Cfg:     deps.Cfg,
+		Paths:   deps.Paths,
+		JWT:     deps.JWT,
+		Captcha: deps.Captcha,
+		Storage: deps.Storage,
+		Sys:     deps.Sys,
+		Plugins: deps.Plugins,
+	}
 }
 
 // principalVersion 当前全局权限版本；未初始化时生成一个（永久 key）。
@@ -89,8 +103,7 @@ func (s *Service) InvalidateRoleUsers(ctx context.Context, roleID uint64) {
 	s.invalidatePrincipal(ctx, ids...)
 }
 
-// InvalidateAll 全量失效：更换权限版本号，所有用户的主体缓存立即不可见。
-// 注意：必须替换版本号（而不是删除某个从不被读取的 key），否则权限变更最长要等 principalTTL 才生效。
+// InvalidateAll 全量失效：替换权限版本号，所有用户的主体缓存立即不可见。
 func (s *Service) InvalidateAll(ctx context.Context) {
 	_ = s.Cache.Set(ctx, keyPrincipalVersion, fmt.Sprintf("%d", time.Now().UnixNano()), 0)
 }

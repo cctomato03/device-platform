@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"web-basic/internal/model/entity"
-	"web-basic/internal/principal"
-	"web-basic/internal/repository"
-	"web-basic/pkg/errs"
+	"device-platform/internal/model/entity"
+	"device-platform/internal/principal"
+	"device-platform/internal/repository"
+	"device-platform/pkg/errs"
 )
 
 // SiteConfigReq 站点配置入参。

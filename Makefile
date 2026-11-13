@@ -1,23 +1,23 @@
-# Web Basic 管理平台脚手架 —— 常用任务
-# 说明：Windows 用户请使用 scripts/build.ps1，本 Makefile 面向 Linux / macOS / WSL。
-
+# 设备管理平台 Makefile —— 常用任务
+# Windows 用户也可用 scripts/build.ps1；本文件面向 Linux / macOS / WSL。
 SHELL := /bin/bash
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 BUILT   ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w -X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildTime=$(BUILT)
+DATA_DIR ?= runtime
 
 .PHONY: help
 help:
 	@echo "make web-install   安装前端依赖"
 	@echo "make web-dev       前端开发服务器 (5173)"
-	@echo "make server-dev    后端开发服务器 (8090)"
-	@echo "make build         构建单可执行文件 bin/web-basic-server"
-	@echo "make build-dist    前后端分离构建（web/dist + bin/web-basic-server）"
-	@echo "make test          运行后端测试与 vet"
-	@echo "make docker        构建镜像 web-basic:latest"
-	@echo "make up / down     docker compose 启停（MySQL8 + Redis）"
-	@echo "make up57 / down57 docker compose 启停（MySQL5.7 变体）"
+	@echo "make server-dev    后端开发服务器 (8090，数据目录 $(DATA_DIR))"
+	@echo "make build         构建单可执行文件（前端内嵌）bin/device-platform-server"
+	@echo "make build-linux   交叉编译 linux/amd64 + linux/arm64 交付包到 dist/"
+	@echo "make plugin        打包 plugins-src 下的插件包到 dist/plugins"
+	@echo "make market-index  生成插件市场索引（需 MARKET_KEY/BASE_URL 变量）"
+	@echo "make test          后端 vet + 单测 + 前端类型检查"
+	@echo "make clean         清理构建产物与本地运行数据"
 
 web-install:
 	cd web && pnpm install
@@ -26,30 +26,29 @@ web-dev:
 	cd web && pnpm dev
 
 server-dev:
-	go run ./cmd/server -c configs/config.yaml
+	go run ./cmd/server -d $(DATA_DIR)
 
 build:
 	bash scripts/build.sh bin
 
-build-dist:
-	cd web && pnpm build
-	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/web-basic-server ./cmd/server
+build-linux:
+	bash scripts/build-linux.sh
+
+plugin:
+	@for d in plugins-src/*/; do [ -f $$d/manifest.json ] && bash scripts/pack-plugin.sh $$d; done
+
+# 生成在线市场索引：make market-index BASE_URL=https://plugins.example.com MARKET_KEY=xxx
+BASE_URL ?= http://127.0.0.1:18080
+MARKET_KEY ?=
+market-index: plugin
+	python3 scripts/gen-plugin-index.py --dir dist/plugins --base-url $(BASE_URL) \
+		--out dist/plugins/plugin-index.json $(if $(MARKET_KEY),--key $(MARKET_KEY),)
 
 test:
 	go vet ./...
 	go test ./... -count=1
+	cd web && npx vue-tsc --noEmit
 
-docker:
-	docker build -f deploy/Dockerfile -t web-basic:latest .
-
-up:
-	docker compose -f deploy/docker-compose.yml up -d --build
-
-down:
-	docker compose -f deploy/docker-compose.yml down
-
-up57:
-	docker compose -f deploy/docker-compose.mysql57.yml up -d --build
-
-down57:
-	docker compose -f deploy/docker-compose.mysql57.yml down
+clean:
+	rm -rf bin dist internal/webui/dist web/dist
+	@echo "本地运行数据（$(DATA_DIR)）请手动删除：rm -rf $(DATA_DIR)"

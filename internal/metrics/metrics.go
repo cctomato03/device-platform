@@ -112,8 +112,8 @@ func (r *Registry) ObserveCron(handler, result string, cost time.Duration) {
 // Extras 抓取时追加的额外指标（由调用方提供依赖探针）。
 type Extras struct {
 	Build map[string]string // 版本信息
-	MySQL map[string]float64
-	Redis float64 // 1 可用 / 0 不可用
+	DB    map[string]float64 // 数据库连接池状态
+	Cache float64            // 缓存可用性 1/0
 }
 
 // Render 输出 Prometheus 文本格式。
@@ -212,14 +212,14 @@ func (r *Registry) Render(w io.Writer, ex Extras) {
 	}
 
 	// ---------- 依赖探针 ----------
-	if ex.MySQL != nil {
+	if ex.DB != nil {
 		fmt.Fprintf(w, "# HELP web_basic_db_connections 数据库连接池状态\n# TYPE web_basic_db_connections gauge\n")
 		for _, st := range []string{"open", "in_use", "idle"} {
-			fmt.Fprintf(w, "web_basic_db_connections{state=%q} %s\n", st, trimFloat(ex.MySQL[st]))
+			fmt.Fprintf(w, "web_basic_db_connections{state=%q} %s\n", st, trimFloat(ex.DB[st]))
 		}
 	}
-	fmt.Fprintf(w, "# HELP web_basic_redis_up Redis 可用性（1/0）\n# TYPE web_basic_redis_up gauge\n")
-	fmt.Fprintf(w, "web_basic_redis_up %s\n", trimFloat(ex.Redis))
+	fmt.Fprintf(w, "# HELP web_basic_cache_up 进程内缓存可用性（1/0）\n# TYPE web_basic_cache_up gauge\n")
+	fmt.Fprintf(w, "web_basic_cache_up %s\n", trimFloat(ex.Cache))
 
 	// ---------- 运行时 ----------
 	var ms runtime.MemStats

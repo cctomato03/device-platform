@@ -3,11 +3,11 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 
-	"web-basic/internal/principal"
-	"web-basic/internal/repository"
-	"web-basic/internal/service"
-	"web-basic/pkg/jsonx"
-	"web-basic/pkg/response"
+	"device-platform/internal/principal"
+	"device-platform/internal/repository"
+	"device-platform/internal/service"
+	"device-platform/pkg/jsonx"
+	"device-platform/pkg/response"
 )
 
 // ListUsers 用户列表。

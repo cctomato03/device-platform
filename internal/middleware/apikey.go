@@ -7,10 +7,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"web-basic/internal/principal"
-	"web-basic/internal/service"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/response"
+	"device-platform/internal/principal"
+	"device-platform/internal/service"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/response"
 )
 
 // APIKey 开放接口鉴权：业务系统用 `X-API-KEY` 头对接，不需要用户登录。

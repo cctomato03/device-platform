@@ -1,0 +1,34 @@
+[Unit]
+# 设备管理平台 systemd 单元模板
+#
+# 安装脚本（deploy/install.sh）会自动生成并写入 /etc/systemd/system/device-platform.service，
+# 这里保留一份可读模板，便于理解各字段含义或手工调整。
+#
+# 手工安装时替换占位符即可：
+#   __INSTALL_DIR__  安装目录（默认 /opt/device-platform）
+#   __RUN_USER__     运行用户（默认 root；非 root 用户需要下面的 AmbientCapabilities）
+Description=Device Platform (设备管理平台)
+Documentation=file://__INSTALL_DIR__
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__RUN_USER__
+WorkingDirectory=__INSTALL_DIR__
+# 通过 -d 指定数据根目录：数据库/日志/插件/上传文件都在这个目录内
+ExecStart=__INSTALL_DIR__/bin/device-platform -d __INSTALL_DIR__
+Environment=DEVPLAT_HOME=__INSTALL_DIR__
+Restart=on-failure
+RestartSec=5s
+# 下发路由/防火墙规则、抓包排查需要的 capability（避免直接给完整 root）
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+# 安全加固（可选，按需放开）
+# PrivateTmp=true
+# ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

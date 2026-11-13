@@ -1,4 +1,4 @@
-// Package generator 简易代码生成器：读 information_schema 生成 CRUD 样板代码。
+// Package generator 简易代码生成器：读 SQLite 表结构（sqlite_master + PRAGMA）生成 CRUD 样板代码。
 //
 // 输出物（一次生成一张表的全套骨架）：
 //
@@ -22,7 +22,7 @@ import (
 	"unicode"
 )
 
-// ColumnMeta information_schema.columns 精简视图。
+// ColumnMeta 表字段精简视图（来自 PRAGMA table_info）。
 type ColumnMeta struct {
 	Name       string `json:"name"`
 	DataType   string `json:"dataType"`
@@ -54,26 +54,29 @@ var skipTables = map[string]bool{
 	"schema_migrations": true,
 }
 
-// LoadTables 读取库内所有表（含注释与行数）。
+// LoadTables 读取库内所有表（含行数）。
+//
+// SQLite 没有 information_schema，这里读 sqlite_master 并跳过内部表；
+// 行数按需统计（列表页只给出估算避免全表扫描），表注释 SQLite 不支持，统一置空。
 func LoadTables(ctx context.Context, db *sql.DB, schema string) ([]TableMeta, error) {
 	rows, err := db.QueryContext(ctx, `
-SELECT t.TABLE_NAME, IFNULL(t.TABLE_COMMENT,''), IFNULL(t.TABLE_ROWS,0), IFNULL(DATE_FORMAT(t.CREATE_TIME,'%Y-%m-%d %H:%i:%s'),'')
-FROM information_schema.TABLES t
-WHERE t.TABLE_SCHEMA = ? AND t.TABLE_TYPE = 'BASE TABLE'
-ORDER BY t.TABLE_NAME`, schema)
+SELECT name FROM sqlite_master
+WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	out := make([]TableMeta, 0, 32)
 	for rows.Next() {
-		var m TableMeta
-		if err := rows.Scan(&m.Name, &m.Comment, &m.RowCount, &m.CreateAt); err != nil {
+		var name string
+		if err := rows.Scan(&name); err != nil {
 			return nil, err
 		}
-		if skipTables[m.Name] {
+		if skipTables[name] || isInternalTable(name) {
 			continue
 		}
+		m := TableMeta{Name: name, Comment: "", CreateAt: ""}
 		m.fill()
 		out = append(out, m)
 	}
@@ -82,19 +85,22 @@ ORDER BY t.TABLE_NAME`, schema)
 
 // LoadTable 读取单表元信息（含字段）。
 func LoadTable(ctx context.Context, db *sql.DB, schema, table string) (*TableMeta, error) {
-	var m TableMeta
-	err := db.QueryRowContext(ctx, `
-SELECT t.TABLE_NAME, IFNULL(t.TABLE_COMMENT,''), IFNULL(t.TABLE_ROWS,0), IFNULL(DATE_FORMAT(t.CREATE_TIME,'%Y-%m-%d %H:%i:%s'),'')
-FROM information_schema.TABLES t
-WHERE t.TABLE_SCHEMA = ? AND t.TABLE_NAME = ?`, schema, table).
-		Scan(&m.Name, &m.Comment, &m.RowCount, &m.CreateAt)
+	var name string
+	err := db.QueryRowContext(ctx,
+		`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`, table).Scan(&name)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	cols, err := loadColumns(ctx, db, schema, table)
+	m := TableMeta{Name: name, Comment: "", CreateAt: ""}
+	// 单表详情可以承受一次 COUNT(*)
+	var count int64
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM "`+name+`"`).Scan(&count); err == nil {
+		m.RowCount = count
+	}
+	cols, err := loadColumns(ctx, db, schema, name)
 	if err != nil {
 		return nil, err
 	}
@@ -103,30 +109,55 @@ WHERE t.TABLE_SCHEMA = ? AND t.TABLE_NAME = ?`, schema, table).
 	return &m, nil
 }
 
+// isInternalTable 内部索引表（FTS/自动索引等）不参与代码生成。
+func isInternalTable(name string) bool { return strings.HasPrefix(name, "sqlite_") }
+
+// loadColumns 通过 PRAGMA table_info 读取字段元信息。
 func loadColumns(ctx context.Context, db *sql.DB, schema, table string) ([]ColumnMeta, error) {
-	rows, err := db.QueryContext(ctx, `
-SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE, IFNULL(COLUMN_COMMENT,''), IS_NULLABLE, COLUMN_KEY, EXTRA,
-       IFNULL(CHARACTER_MAXIMUM_LENGTH, 0)
-FROM information_schema.COLUMNS
-WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-ORDER BY ORDINAL_POSITION`, schema, table)
+	rows, err := db.QueryContext(ctx, `SELECT cid, name, type, "notnull", COALESCE(dflt_value,''), pk FROM pragma_table_info(?)`, table)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	out := make([]ColumnMeta, 0, 24)
 	for rows.Next() {
-		var c ColumnMeta
-		var nullable, key, extra string
-		if err := rows.Scan(&c.Name, &c.DataType, &c.ColumnType, &c.Comment, &nullable, &key, &extra, &c.MaxLen); err != nil {
+		var (
+			cid, notnull, pk int
+			name, declType   string
+			dflt             string
+		)
+		if err := rows.Scan(&cid, &name, &declType, &notnull, &dflt, &pk); err != nil {
 			return nil, err
 		}
-		c.Nullable = nullable == "YES"
-		c.IsPrimary = key == "PRI"
-		c.AutoIncr = strings.Contains(extra, "auto_increment")
+		c := ColumnMeta{
+			Name:       name,
+			DataType:   strings.ToLower(declType),
+			ColumnType: declType,
+			Nullable:   notnull == 0,
+			IsPrimary:  pk > 0,
+			AutoIncr:   pk > 0 && strings.EqualFold(declType, "INTEGER"),
+			Comment:    "",
+		}
+		if n, ok := typeLen(declType); ok {
+			c.MaxLen = n
+		}
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// typeLen 从 "VARCHAR(64)" 之类的声明里取出长度。
+func typeLen(declType string) (int, bool) {
+	i := strings.IndexByte(declType, '(')
+	j := strings.IndexByte(declType, ')')
+	if i < 0 || j <= i {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(declType[i+1 : j]))
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 // fill 计算命名派生字段。

@@ -4,8 +4,8 @@ package repository
 import (
 	"gorm.io/gorm"
 
-	"web-basic/internal/config"
-	"web-basic/pkg/cache"
+	"device-platform/internal/config"
+	"device-platform/pkg/cache"
 )
 
 // Repo 数据访问入口。

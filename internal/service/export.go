@@ -14,13 +14,13 @@ import (
 	"strings"
 	"time"
 
-	"web-basic/internal/excel"
-	"web-basic/internal/model/entity"
-	"web-basic/internal/model/scope"
-	"web-basic/internal/principal"
-	"web-basic/internal/repository"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/jsonx"
+	"device-platform/internal/excel"
+	"device-platform/internal/model/entity"
+	"device-platform/internal/model/scope"
+	"device-platform/internal/principal"
+	"device-platform/internal/repository"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/jsonx"
 )
 
 // maxExportRows 单次导出上限（防止一次导出把内存打满）。

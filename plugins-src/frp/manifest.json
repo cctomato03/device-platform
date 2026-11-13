@@ -1,0 +1,115 @@
+{
+  "id": "frp",
+  "name": "FRP 内网穿透",
+  "version": "1.0.0",
+  "vendor": "device-platform",
+  "category": "network",
+  "description": "把设备上的本地端口映射到公网 frps 服务器（frpc 客户端）。支持多端口映射、Token 认证与 TLS，配置保存后由平台生成 frpc.toml 并守护进程。",
+  "icon": "ri:global-line",
+  "homepage": "https://github.com/fatedier/frp",
+  "license": "Apache-2.0",
+  "arch": ["amd64", "arm64", "arm"],
+  "runtime": "process",
+  "entry": "bin/frpc",
+  "args": ["-c", "{{ .platform.dataDir }}/conf/frpc.toml"],
+  "restartPolicy": "always",
+  "ports": [],
+  "privileged": false,
+  "healthCheck": { "type": "none", "intervalSec": 15 },
+  "configFiles": [
+    {
+      "path": "{{ .platform.dataDir }}/conf/frpc.toml",
+      "template": "frpc.toml.tmpl",
+      "mode": "0600"
+    }
+  ],
+  "schema": [
+    {
+      "key": "serverAddr",
+      "label": "服务器地址",
+      "type": "string",
+      "default": "",
+      "required": true,
+      "placeholder": "frps.example.com",
+      "help": "公网 frps 服务器域名或 IP"
+    },
+    {
+      "key": "serverPort",
+      "label": "服务器端口",
+      "type": "int",
+      "default": 7000,
+      "required": true,
+      "min": 1,
+      "max": 65535,
+      "help": "frps 的 bindPort，默认 7000"
+    },
+    {
+      "key": "authToken",
+      "label": "认证令牌",
+      "type": "password",
+      "default": "",
+      "help": "与 frps 的 auth.token 保持一致，留空表示不认证"
+    },
+    {
+      "key": "tlsEnable",
+      "label": "启用 TLS",
+      "type": "bool",
+      "default": false,
+      "help": "开启后与 frps 之间的连接加密"
+    },
+    {
+      "key": "user",
+      "label": "用户标识",
+      "type": "string",
+      "default": "device",
+      "help": "在 frps 侧区分不同设备的用户名（可留空）"
+    },
+    {
+      "key": "logLevel",
+      "label": "日志级别",
+      "type": "select",
+      "default": "info",
+      "options": [
+        { "label": "trace", "value": "trace" },
+        { "label": "debug", "value": "debug" },
+        { "label": "info", "value": "info" },
+        { "label": "warn", "value": "warn" },
+        { "label": "error", "value": "error" }
+      ]
+    },
+    {
+      "key": "proxies",
+      "label": "端口映射",
+      "type": "list",
+      "help": "每条映射把设备上的一个本地端口暴露到服务器端口",
+      "default": [
+        {
+          "name": "web",
+          "type": "tcp",
+          "localIP": "127.0.0.1",
+          "localPort": 8090,
+          "remotePort": 18090
+        }
+      ],
+      "fields": [
+        { "key": "name", "label": "名称", "type": "string", "required": true, "placeholder": "web" },
+        {
+          "key": "type",
+          "label": "协议",
+          "type": "select",
+          "default": "tcp",
+          "options": [
+            { "label": "tcp", "value": "tcp" },
+            { "label": "udp", "value": "udp" },
+            { "label": "http", "value": "http" },
+            { "label": "https", "value": "https" }
+          ]
+        },
+        { "key": "localIP", "label": "本地地址", "type": "string", "default": "127.0.0.1" },
+        { "key": "localPort", "label": "本地端口", "type": "int", "required": true, "min": 1, "max": 65535 },
+        { "key": "remotePort", "label": "服务器端口", "type": "int", "min": 1, "max": 65535, "help": "tcp/udp 必填" },
+        { "key": "customDomains", "label": "自定义域名", "type": "string", "help": "http/https 类型必填，逗号分隔" }
+      ]
+    }
+  ]
+}

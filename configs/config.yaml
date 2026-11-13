@@ -1,37 +1,45 @@
+# =============================================================================
+# 设备管理平台 · 默认配置（开发/单机部署）
+#
+# 说明：
+#   - 平台不依赖 MySQL / Redis：数据库是嵌入式 SQLite，缓存为进程内实现；
+#   - 所有运行时文件都落在 app.home（数据根目录）下，便于整机备份与迁移：
+#       <home>/conf/config.yaml      本文件
+#       <home>/data/device-platform.db  SQLite 数据库
+#       <home>/logs/                 平台日志
+#       <home>/plugins/             已安装插件包
+#       <home>/plugin-data/         插件运行数据（配置/日志）
+#       <home>/storage/             平台上传文件
+#   - 环境变量覆盖规则：APP__<配置路径，层级用 __ 分隔>，例如 APP__APP__PORT、APP__DATABASE__PATH
+# =============================================================================
 app:
-  name: web-basic
-  env: dev
+  name: device-platform
+  env: dev                  # dev | test | prod
+  home: runtime             # 数据根目录（可被 -d 参数或 DEVPLAT_HOME 覆盖）
   port: 8090
-  mode: debug
+  mode: debug               # debug | release
   timezone: Asia/Shanghai
   lang: zh-CN
-  admin_password: "" # 首次初始化超管密码，留空则随机生成并打印日志
+  # 首次启动初始化超管密码（也可用 APP__APP__ADMIN_PASSWORD 注入；留空则自动生成并打印）
+  admin_password: ""
   cors_origins:
     - http://localhost:5173
     - http://127.0.0.1:5173
 
-mysql:
-  dsn: "root:root123@tcp(127.0.0.1:3307)/web_basic?charset=utf8mb4&parseTime=True&loc=Local&timeout=10s&clientFoundRows=true"
-  max_idle: 10
-  max_open: 100
-  conn_max_lifetime_min: 60
-  slow_threshold_ms: 200
-  auto_migrate: true # 生产建议 false，由发布流程显式执行
+database:
+  driver: sqlite
+  path: ""                  # 留空 → <home>/data/device-platform.db
+  max_open: 4
+  busy_timeout_ms: 10000    # 写锁等待，避免瞬时 SQLITE_BUSY
+  wal: true                 # WAL 模式：读写并发更顺畅
   log_sql: false
-
-redis:
-  addr: "127.0.0.1:6380"
-  password: ""
-  db: 0
-  prefix: "web:"
-  pool_size: 50
+  slow_threshold_ms: 200
 
 jwt:
-  secret: "dev-only-secret-please-change-in-production"
-  secret_previous: ""
+  secret: ""                # 生产必须通过 APP__JWT__SECRET 注入 ≥32 位随机串
   access_ttl: 2h
   refresh_ttl: 168h
-  issuer: web-basic
+  issuer: device-platform
 
 auth:
   single_session: false
@@ -43,56 +51,57 @@ auth:
 
 upload:
   max_size_mb: 20
-  allow_ext: [jpg, jpeg, png, gif, webp, pdf, doc, docx, xls, xlsx, ppt, pptx, zip, txt, mp4]
+  allow_ext: [jpg, jpeg, png, gif, webp, pdf, doc, docx, xls, xlsx, ppt, pptx, zip, tar, gz, tgz, txt, mp4, bin]
 
 storage:
-  type: local # local | oss
+  type: local               # local | oss
   local:
-    base_dir: ./storage
+    base_dir: ""            # 留空 → <home>/storage
     url_prefix: /static
-  oss:
-    endpoint: oss-cn-hangzhou.aliyuncs.com
-    bucket: my-bucket
-    access_key: ""
-    secret_key: ""
-    domain: ""
-    private: false
-    sign_expire: 3600
 
 log:
   level: info
-  dir: ./logs
-  max_size_mb: 100
-  max_backups: 30
+  dir: ""                   # 留空 → <home>/logs
+  max_size_mb: 50
+  max_backups: 10
   max_age_days: 30
   console: true
 
-# 租户：隔离随登录态常开，这里只配置默认租户
 tenant:
   default_id: 1
 
-# Prometheus 指标（GET /metrics）；token 非空时抓取需带 X-Metrics-Token 头
 metrics:
   enabled: true
-  token: ""
 
-# 在线接口文档（/swagger/index.html，完全离线，无 CDN 依赖）
 swagger:
-  enabled: true
-  title: web-basic 接口文档
-  desc: Go + Gin 后端 · RBAC 权限 · 多租户
+  enabled: false
 
 scheduler:
   enabled: true
   pool_size: 10
-  # 是否允许「Shell 脚本」型定时任务（job_type=3）。
-  # 打开后，拥有 system:job:create 权限的用户可以在服务器上执行任意 sh/bash/python 脚本，
-  # 仅在你明确需要「后台自定义任务内容」且能管控权限时开启；默认关闭。
-  shell_enabled: false
-# 业务系统对接（开放接口）：把外部系统的消息/待办推进本系统
-# 打开后必须配置 api_key（生产用环境变量 APP__INTEGRATION__API_KEY 覆盖）
+  shell_enabled: false      # 允许后台执行任意 Shell：默认关闭
+
+plugin:
+  dir: ""                   # 留空 → <home>/plugins
+  data_dir: ""              # 留空 → <home>/plugin-data
+  allow_docker: true        # 设备未装 docker 时置 false
+  auto_start: true          # 平台启动时拉起 auto_start 的插件
+  install_timeout_sec: 300
+  log_tail_lines: 500
+
+system:
+  monitor_interval_sec: 10  # 指标采集 + 告警判定周期
+  metric_retain_hours: 168  # 指标历史保留 7 天
+  tools_enabled: true       # 排查工具总开关
+  tools:
+    ping: true
+    traceroute: true
+    tcpdump: true
+    netstat: true
+  log_retain_days: 30
+  sniffer_iface: ""
+
 integration:
   enabled: false
   api_key: ""
-  # 开放接口写入的租户
   tenant_id: 1

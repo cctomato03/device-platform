@@ -45,7 +45,10 @@ async function redisGet(key) {
       /* 换下一个候选容器 */
     }
   }
-  throw new Error(`无法从 Redis 读取验证码，已尝试容器：${REDIS_CONTAINERS.join(', ')}`)
+  throw new Error(
+    `无法读取验证码：本平台已改为进程内存储（不再使用 Redis），` +
+      `请以 APP__AUTH__CAPTCHA_ENABLED=false 启动服务后重跑本脚本。已尝试容器：${REDIS_CONTAINERS.join(', ')}`
+  )
   } catch {
     return ''
   }
@@ -71,8 +74,12 @@ async function api(path, { method = 'GET', token, body } = {}) {
 async function login(username, password) {
   const cap = await api('/api/v1/auth/captcha')
   const captchaId = cap.json?.data?.captchaId || ''
-  const captchaCode = captchaId ? await redisGet(`${REDIS_PREFIX}captcha:${captchaId}`) : ''
-  if (!captchaCode) throw new Error('无法从 Redis 读取验证码，请确认容器与 key 前缀')
+  const captchaEnabled = cap.json?.data?.enabled !== false
+  // 验证码关闭时服务端不校验，直接登录（设备平台默认走这条路径）
+  let captchaCode = ''
+  if (captchaEnabled && captchaId) {
+    captchaCode = await redisGet(`${REDIS_PREFIX}captcha:${captchaId}`)
+  }
   const res = await api('/api/v1/auth/login', {
     method: 'POST',
     body: { username, password, captchaId, captchaCode }
@@ -113,7 +120,10 @@ async function main() {
   }
   const ready = await api('/readyz')
   const readyBody = ready.json?.data || ready.json
-  check('依赖就绪（mysql + redis）', readyBody?.mysql === true && readyBody?.redis === true, JSON.stringify(readyBody))
+  // 新架构：database(SQLite) + cache(进程内)；兼容旧版的 mysql/redis 字段名
+  const dbOK = (readyBody?.database ?? readyBody?.mysql) === true
+  const cacheOK = (readyBody?.cache ?? readyBody?.redis) === true
+  check('依赖就绪（database + cache）', dbOK && cacheOK, JSON.stringify(readyBody))
 
   // 2. 登录
   const admin = await login(adminUser, adminPass)
@@ -817,14 +827,19 @@ async function main() {
     const list = cfgRows.json?.data || []
     const capRow = list.find((r) => r.key === 'sys.login.captcha')
     const sliderRow = list.find((r) => r.key === 'sys.login.slider')
+    // 配置文件里的 auth.captcha_enabled 是总闸：关闭时后台开关无法开启验证码，
+    // 因此这里按「总闸是否开启」分别断言，避免误报。
+    const captchaMasterOn = process.env.E2E_CAPTCHA_MASTER_ON !== '0'
+    const capSwitch = pub.json?.data?.['sys.login.captcha']
+    const sliderSwitch = pub.json?.data?.['sys.login.slider']
     check(
       '登录开关已进入公开参数（验证码 / 滑块）',
       pub.json?.code === 0 &&
-        pub.json.data['sys.login.captcha'] === 'true' &&
-        pub.json.data['sys.login.slider'] === 'true' &&
         !!capRow?.id &&
-        !!sliderRow?.id,
-      `captcha=${pub.json?.data?.['sys.login.captcha']} slider=${pub.json?.data?.['sys.login.slider']}`
+        !!sliderRow?.id &&
+        (captchaMasterOn ? capSwitch === 'true' : capSwitch === 'false') &&
+        sliderSwitch === 'true',
+      `captcha=${capSwitch} slider=${sliderSwitch} master=${captchaMasterOn}`
     )
 
     const putCfg = (row, value) =>
@@ -857,7 +872,16 @@ async function main() {
       )
       await putCfg(capRow, true)
       const capOn = await api('/api/v1/auth/captcha')
-      check('重新开启验证码后立即恢复（开关热更新）', capOn.json?.data?.enabled === true, `enabled=${capOn.json?.data?.enabled}`)
+      if (captchaMasterOn) {
+        check('重新开启验证码后立即恢复（开关热更新）', capOn.json?.data?.enabled === true, `enabled=${capOn.json?.data?.enabled}`)
+      } else {
+        // 总闸关闭：即使后台开关打开也应保持关闭（避免「配了却无效」的误解）
+        check(
+          '总闸关闭时验证码保持关闭（设计如此）',
+          capOn.json?.data?.enabled === false,
+          `enabled=${capOn.json?.data?.enabled}（auth.captcha_enabled=false）`
+        )
+      }
     }
   }
 

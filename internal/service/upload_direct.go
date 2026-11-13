@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"web-basic/internal/model/entity"
-	"web-basic/internal/principal"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/id"
-	"web-basic/pkg/storage"
+	"device-platform/internal/model/entity"
+	"device-platform/internal/principal"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/id"
+	"device-platform/pkg/storage"
 )
 
 // 前端直传 OSS（Presigned PUT）方案：

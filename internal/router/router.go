@@ -10,15 +10,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"web-basic/internal/api"
-	"web-basic/internal/config"
-	"web-basic/internal/metrics"
-	"web-basic/internal/middleware"
-	"web-basic/internal/openapi"
-	"web-basic/internal/service"
-	"web-basic/internal/webui"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/response"
+	"device-platform/internal/api"
+	"device-platform/internal/config"
+	"device-platform/internal/metrics"
+	"device-platform/internal/middleware"
+	"device-platform/internal/openapi"
+	"device-platform/internal/service"
+	"device-platform/internal/webui"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/response"
 )
 
 // New 构建 Gin 引擎。
@@ -83,7 +83,7 @@ func New(cfg *config.Config, svc *service.Service, h *api.Handler) *gin.Engine {
 	}
 
 	// ---------- 需登录接口 ----------
-	authed := v1.Group("", middleware.Auth(svc), middleware.OperLog(svc))
+	authed := v1.Group("", middleware.Auth(svc), middleware.AccessLog(svc), middleware.OperLog(svc))
 	{
 		authed.POST("/auth/logout", h.Logout)
 		authed.GET("/auth/userinfo", h.UserInfo)
@@ -232,6 +232,134 @@ func New(cfg *config.Config, svc *service.Service, h *api.Handler) *gin.Engine {
 		// 首页概览
 		authed.GET("/dashboard/summary", h.DashboardSummary)
 
+		// ==================== 设备平台：主机管理 ====================
+		host := authed.Group("/host")
+		host.GET("/overview", middleware.Perm("host:overview:view"), h.HostOverview)
+		host.GET("/snapshot", middleware.Perm("host:hardware:view"), h.HostSnapshot)
+		host.GET("/metrics", middleware.Perm("host:monitor:view"), h.HostMetricsHistory)
+		host.GET("/traffic", middleware.Perm("host:traffic:view"), h.ListTrafficLogs)
+
+		// ==================== 设备平台：设备管理 ====================
+		dev := authed.Group("/device")
+		dev.GET("/settings", middleware.Perm("device:setting:list"), h.GetDeviceSettings)
+		dev.PUT("/settings", middleware.Perm("device:setting:update"), h.UpdateDeviceSettings)
+		dev.GET("/time", middleware.Perm("device:setting:list"), h.GetDeviceTime)
+		dev.POST("/time/sync", middleware.Perm("device:setting:update"), h.SyncDeviceTime)
+		dev.GET("/about", middleware.Perm("device:about:view"), h.PlatformAbout)
+		dev.GET("/netstatus", middleware.Perm("device:netstatus:view"), h.NetworkStatus)
+		dev.GET("/alert/rules", middleware.Perm("device:alert:list"), h.ListAlertRules)
+		dev.POST("/alert/rules", middleware.Perm("device:alert:create"), h.SaveAlertRule)
+		dev.PUT("/alert/rules", middleware.Perm("device:alert:update"), h.SaveAlertRule)
+		dev.DELETE("/alert/rules/:id", middleware.Perm("device:alert:delete"), h.DeleteAlertRule)
+		dev.GET("/alert/records", middleware.Perm("device:alert:list"), h.ListAlertRecords)
+		dev.PUT("/alert/records/:id/ack", middleware.Perm("device:alert:update"), h.AckAlertRecord)
+		dev.GET("/tools/meta", middleware.Perm("device:tool:list"), h.ToolMeta)
+		dev.POST("/tools/run", middleware.Perm("device:tool:run"), h.RunTool)
+		dev.GET("/tools/stream", middleware.Perm("device:tool:run"), h.StreamTool)
+
+		// SNMP 服务（net-snmp）
+		dev.GET("/snmp", middleware.Perm("device:snmp:list"), h.GetSnmpConfig)
+		dev.PUT("/snmp", middleware.Perm("device:snmp:update"), h.SaveSnmpConfig)
+		dev.POST("/snmp/apply", middleware.Perm("device:snmp:apply"), h.ApplySnmpConfig)
+		dev.POST("/snmp/install", middleware.Perm("device:snmp:install"), h.InstallSNMP)
+		dev.GET("/snmp/status", middleware.Perm("device:snmp:list"), h.SnmpStatus)
+
+		// ==================== 设备平台：网络管理 ====================
+		net := authed.Group("/network")
+		net.GET("/interfaces", middleware.Perm("network:iface:list"), h.ListInterfaces)
+		net.GET("/status", middleware.Perm("network:iface:list"), h.NetworkStatus)
+		net.GET("/routes", middleware.Perm("network:route:list"), h.ListStaticRoutes)
+		net.POST("/routes", middleware.Perm("network:route:create"), h.SaveStaticRoute)
+		net.PUT("/routes", middleware.Perm("network:route:update"), h.SaveStaticRoute)
+		net.DELETE("/routes/:id", middleware.Perm("network:route:delete"), h.DeleteStaticRoute)
+		net.POST("/routes/apply", middleware.Perm("network:route:apply"), h.ApplyStaticRoutes)
+		net.GET("/dns", middleware.Perm("network:dns:list"), h.GetDNSConfig)
+		net.PUT("/dns", middleware.Perm("network:dns:update"), h.UpdateDNSConfig)
+
+		// 网卡配置（netplan：静态地址 / DHCP / MTU / 网桥 / 端口聚合）
+		net.GET("/iface-configs", middleware.Perm("network:ifacecfg:list"), h.ListIfaceConfigs)
+		net.POST("/iface-configs", middleware.Perm("network:ifacecfg:update"), h.SaveIfaceConfig)
+		net.PUT("/iface-configs", middleware.Perm("network:ifacecfg:update"), h.SaveIfaceConfig)
+		net.DELETE("/iface-configs/:id", middleware.Perm("network:ifacecfg:update"), h.DeleteIfaceConfig)
+		net.POST("/iface-configs/apply", middleware.Perm("network:ifacecfg:apply"), h.ApplyIfaceConfigs)
+		net.GET("/iface-configs/meta", middleware.Perm("network:ifacecfg:list"), h.NetplanStatus)
+		net.GET("/iface-configs/preview", middleware.Perm("network:ifacecfg:list"), h.NetplanPreview)
+
+		// 策略路由（ip rule + 路由表）
+		net.GET("/policy-routes", middleware.Perm("network:policyroute:list"), h.ListPolicyRoutes)
+		net.POST("/policy-routes", middleware.Perm("network:policyroute:create"), h.SavePolicyRoute)
+		net.PUT("/policy-routes", middleware.Perm("network:policyroute:update"), h.SavePolicyRoute)
+		net.DELETE("/policy-routes/:id", middleware.Perm("network:policyroute:delete"), h.DeletePolicyRoute)
+		net.POST("/policy-routes/apply", middleware.Perm("network:policyroute:apply"), h.ApplyPolicyRoutes)
+
+		// DHCP 服务（dnsmasq）
+		net.GET("/dhcp", middleware.Perm("network:dhcp:list"), h.GetDhcpConfig)
+		net.PUT("/dhcp", middleware.Perm("network:dhcp:update"), h.SaveDhcpConfig)
+		net.POST("/dhcp/apply", middleware.Perm("network:dhcp:apply"), h.ApplyDhcpConfig)
+		net.POST("/dhcp/install", middleware.Perm("network:dhcp:install"), h.InstallDnsmasq)
+
+		// DNS 服务（dnsmasq）
+		net.GET("/dns-server", middleware.Perm("network:dnsserver:list"), h.GetDnsServerConfig)
+		net.PUT("/dns-server", middleware.Perm("network:dnsserver:update"), h.SaveDnsServerConfig)
+		net.POST("/dns-server/apply", middleware.Perm("network:dnsserver:apply"), h.ApplyDnsServerConfig)
+		net.POST("/dns-server/install", middleware.Perm("network:dnsserver:install"), h.InstallDnsmasq)
+		net.GET("/dnsmasq/status", middleware.Perm("network:dhcp:list"), h.DnsmasqStatus)
+
+		// 动态路由 BGP / OSPF（FRR）
+		net.GET("/routing", middleware.Perm("network:routing:list"), h.ListRoutingConfigs)
+		net.PUT("/routing", middleware.Perm("network:routing:update"), h.SaveRoutingConfig)
+		net.POST("/routing/apply", middleware.Perm("network:routing:apply"), h.ApplyRoutingConfigs)
+		net.POST("/routing/install", middleware.Perm("network:routing:install"), h.InstallFRR)
+		net.GET("/routing/status", middleware.Perm("network:routing:list"), h.RoutingStatus)
+
+		// ==================== 设备平台：安全策略 ====================
+		sec := authed.Group("/security")
+		sec.GET("/firewall", middleware.Perm("security:firewall:list"), h.FirewallStatus)
+		sec.POST("/firewall/install", middleware.Perm("security:firewall:install"), h.InstallFirewalld)
+		sec.GET("/policies", middleware.Perm("security:policy:list"), h.ListPolicies)
+		sec.POST("/policies", middleware.Perm("security:policy:create"), h.SavePolicy)
+		sec.PUT("/policies", middleware.Perm("security:policy:update"), h.SavePolicy)
+		sec.DELETE("/policies/:id", middleware.Perm("security:policy:delete"), h.DeletePolicy)
+		sec.POST("/policies/apply", middleware.Perm("security:policy:apply"), h.ApplyPolicies)
+		sec.GET("/nat", middleware.Perm("security:nat:list"), h.ListNATRules)
+		sec.POST("/nat", middleware.Perm("security:nat:create"), h.SaveNATRule)
+		sec.PUT("/nat", middleware.Perm("security:nat:update"), h.SaveNATRule)
+		sec.DELETE("/nat/:id", middleware.Perm("security:nat:delete"), h.DeleteNATRule)
+		sec.POST("/nat/apply", middleware.Perm("security:nat:apply"), h.ApplyNATRules)
+		sec.GET("/qos", middleware.Perm("security:qos:list"), h.ListQosRules)
+		sec.POST("/qos", middleware.Perm("security:qos:create"), h.SaveQosRule)
+		sec.PUT("/qos", middleware.Perm("security:qos:update"), h.SaveQosRule)
+		sec.DELETE("/qos/:id", middleware.Perm("security:qos:delete"), h.DeleteQosRule)
+		sec.POST("/qos/apply", middleware.Perm("security:qos:apply"), h.ApplyQosRules)
+
+		// ==================== 设备平台：插件市场 ====================
+		pl := authed.Group("/plugins")
+		pl.GET("", middleware.Perm("plugin:market:list"), h.ListPlugins)
+		pl.GET("/meta", middleware.Perm("plugin:market:list"), h.PluginRuntimeMeta)
+		pl.GET("/bundled", middleware.Perm("plugin:market:list"), h.ListBundledPlugins)
+		pl.POST("/bundled/:key/install", middleware.Perm("plugin:market:install"), h.InstallBundledPlugin)
+		pl.POST("/install", middleware.Perm("plugin:market:install"), h.InstallPlugin)
+		pl.GET("/:key", middleware.Perm("plugin:market:list"), h.GetPlugin)
+		pl.GET("/:key/status", middleware.Perm("plugin:market:list"), h.PluginStatus)
+		pl.GET("/:key/logs", middleware.Perm("plugin:log:view"), h.PluginLogs)
+		pl.PUT("/:key/config", middleware.Perm("plugin:config:update"), h.UpdatePluginConfig)
+		pl.DELETE("/:key", middleware.Perm("plugin:market:uninstall"), h.UninstallPlugin)
+		pl.POST("/:key/:action", middleware.Perm("plugin:lifecycle:update"), h.PluginAction)
+
+		// 在线插件市场（远程索引 + 签名校验 + 自动升级）
+		pl.GET("/sources", middleware.Perm("plugin:source:list"), h.ListMarketSources)
+		pl.POST("/sources", middleware.Perm("plugin:source:create"), h.SaveMarketSource)
+		pl.PUT("/sources", middleware.Perm("plugin:source:update"), h.SaveMarketSource)
+		pl.DELETE("/sources/:id", middleware.Perm("plugin:source:delete"), h.DeleteMarketSource)
+		pl.GET("/market", middleware.Perm("plugin:market:list"), h.ListMarketPlugins)
+		pl.POST("/market/install", middleware.Perm("plugin:market:install"), h.InstallMarketPlugin)
+
+		// ==================== 设备平台：日志审计 ====================
+		logs := authed.Group("/logs")
+		logs.GET("/access", middleware.Perm("monitor:access-log:list"), h.ListAccessLogs)
+		logs.GET("/traffic", middleware.Perm("monitor:traffic-log:list"), h.ListTrafficLogs)
+		logs.GET("/system", middleware.Perm("monitor:system-log:list"), h.SystemLog)
+
 		// 定时任务
 		j := authed.Group("/system/jobs")
 		j.GET("", middleware.Perm("system:job:list"), h.ListJobs)
@@ -283,16 +411,16 @@ func metricsHandler(svc *service.Service, cfg *config.Config) gin.HandlerFunc {
 				"commit":    middleware.BuildCommit(),
 				"buildTime": middleware.BuildTime(),
 			},
-			MySQL: map[string]float64{},
+			DB: map[string]float64{},
 		}
 		if sqlDB, err := svc.Repo.DB.DB(); err == nil {
 			st := sqlDB.Stats()
-			extras.MySQL["open"] = float64(st.OpenConnections)
-			extras.MySQL["in_use"] = float64(st.InUse)
-			extras.MySQL["idle"] = float64(st.Idle)
+			extras.DB["open"] = float64(st.OpenConnections)
+			extras.DB["in_use"] = float64(st.InUse)
+			extras.DB["idle"] = float64(st.Idle)
 		}
 		if svc.Cache.Ping(ctx) == nil {
-			extras.Redis = 1
+			extras.Cache = 1
 		}
 		c.Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		metrics.Default.Render(c.Writer, extras)

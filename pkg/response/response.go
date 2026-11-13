@@ -11,8 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 
-	"web-basic/internal/metrics"
-	"web-basic/pkg/errs"
+	"device-platform/internal/metrics"
+	"device-platform/pkg/errs"
 )
 
 // Body 标准响应体：code=0 表示成功。

@@ -10,7 +10,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"web-basic/internal/audit"
+	"device-platform/internal/audit"
 )
 
 // Snapshot 把 GORM 结构体实例转成「列名 → 值」的 map，用于前后对比。

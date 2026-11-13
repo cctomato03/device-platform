@@ -3,8 +3,8 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 
-	"web-basic/internal/service"
-	"web-basic/pkg/response"
+	"device-platform/internal/service"
+	"device-platform/pkg/response"
 )
 
 // ListJobs 定时任务列表。

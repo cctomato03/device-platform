@@ -3,8 +3,8 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 
-	"web-basic/internal/principal"
-	"web-basic/pkg/response"
+	"device-platform/internal/principal"
+	"device-platform/pkg/response"
 )
 
 // DashboardSummary 首页概览数据。

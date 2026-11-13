@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"web-basic/internal/model/entity"
+	"device-platform/internal/model/entity"
 )
 
 // SiteConfigID 站点配置单行表主键（业务层更新时复用，避免散落魔法值 1）。

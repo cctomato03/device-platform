@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"web-basic/pkg/response"
+	"device-platform/pkg/response"
 )
 
 // GenTables 代码生成器：库表清单。

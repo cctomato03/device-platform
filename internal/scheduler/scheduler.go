@@ -14,8 +14,8 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"web-basic/internal/logger"
-	"web-basic/internal/service"
+	"device-platform/internal/logger"
+	"device-platform/internal/service"
 )
 
 // Scheduler 任务调度器。

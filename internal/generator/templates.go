@@ -42,12 +42,12 @@ import (
 	"time"
 
 {{if .NeedTime}}	"errors"
-{{end}}	"web-basic/internal/model/entity"
-	"web-basic/internal/model/scope"
-	"web-basic/internal/principal"
-	"web-basic/internal/repository"
-	"web-basic/pkg/errs"
-	"web-basic/pkg/id"
+{{end}}	"device-platform/internal/model/entity"
+	"device-platform/internal/model/scope"
+	"device-platform/internal/principal"
+	"device-platform/internal/repository"
+	"device-platform/pkg/errs"
+	"device-platform/pkg/id"
 )
 
 // {{.Table.Entity}}Query {{.Table.Comment}}列表查询。
@@ -152,9 +152,9 @@ const apiTpl = `package api
 import (
 	"github.com/gin-gonic/gin"
 
-	"web-basic/internal/principal"
-	"web-basic/internal/service"
-	"web-basic/pkg/response"
+	"device-platform/internal/principal"
+	"device-platform/internal/service"
+	"device-platform/pkg/response"
 )
 
 // List{{.Table.Entity}} {{.Table.Comment}}列表。

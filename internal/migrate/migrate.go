@@ -1,4 +1,4 @@
-// Package migrate 极简版本化迁移执行器（内嵌 SQL，兼容 MySQL 5.7/8.0）。
+// Package migrate 极简版本化迁移执行器（内嵌 SQL，SQLite 方言）。
 // 不引入额外依赖：schema_migrations 表记录已执行版本，按文件名顺序执行未应用的 *.up.sql。
 package migrate
 
@@ -11,7 +11,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"web-basic/migrations"
+	"device-platform/migrations"
 )
 
 const tableName = "schema_migrations"
@@ -57,11 +57,9 @@ func run(db *gorm.DB, mfs fs.FS) error {
 
 func ensureTable(db *gorm.DB) error {
 	ddl := "CREATE TABLE IF NOT EXISTS " + tableName + " (" +
-		"version VARCHAR(64) NOT NULL COMMENT '版本号'," +
-		"name VARCHAR(255) NOT NULL DEFAULT '' COMMENT '文件名'," +
-		"applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '执行时间'," +
-		"PRIMARY KEY (version)" +
-		") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='迁移版本记录'"
+		"version TEXT NOT NULL PRIMARY KEY, " +
+		"name TEXT NOT NULL DEFAULT '', " +
+		"applied_at DATETIME NOT NULL DEFAULT (datetime('now','localtime')))"
 	return db.Exec(ddl).Error
 }
 
@@ -77,30 +75,69 @@ func appliedVersions(db *gorm.DB) (map[string]bool, error) {
 	return out, nil
 }
 
-// execScript 按分号拆分语句逐条执行（驱动默认不支持多语句）。
+// execScript 按分号拆分语句逐条执行（驱动不支持多语句）。
 func execScript(db *gorm.DB, script string) error {
 	for _, stmt := range splitStatements(script) {
 		if err := db.Exec(stmt).Error; err != nil {
-			return fmt.Errorf("%w | SQL: %s", err, truncate(stmt, 200))
+			return fmt.Errorf("%w | SQL: %s", err, truncate(stmt, 300))
 		}
 	}
 	return nil
 }
 
+// splitStatements 按顶层分号拆分 SQL 脚本。
+//
+// 与简单 strings.Split 相比这里做了引号感知：单引号/双引号/反引号内部的分号
+// 不会切断语句（种子数据里出现过含分号的文案），同时跳过纯注释片段。
 func splitStatements(script string) []string {
-	raw := strings.Split(script, ";")
-	out := make([]string, 0, len(raw))
-	for _, s := range raw {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		// 仅包含注释的空语句跳过
-		if onlyComments(s) {
-			continue
+	var (
+		out    []string
+		buf    strings.Builder
+		quote  byte
+		escape bool
+	)
+	flush := func() {
+		s := strings.TrimSpace(buf.String())
+		buf.Reset()
+		if s == "" || onlyComments(s) {
+			return
 		}
 		out = append(out, s)
 	}
+	for i := 0; i < len(script); i++ {
+		ch := script[i]
+		if escape {
+			escape = false
+			buf.WriteByte(ch)
+			continue
+		}
+		switch {
+		case quote != 0:
+			if ch == '\\' && quote != '`' {
+				escape = true
+				buf.WriteByte(ch)
+				continue
+			}
+			if ch == quote {
+				quote = 0
+			}
+			buf.WriteByte(ch)
+		case ch == '\'' || ch == '"' || ch == '`':
+			quote = ch
+			buf.WriteByte(ch)
+		case ch == '-' && i+1 < len(script) && script[i+1] == '-':
+			// 行注释：一直吞到行尾（保留换行便于错误定位）
+			for i < len(script) && script[i] != '\n' {
+				i++
+			}
+			buf.WriteByte('\n')
+		case ch == ';':
+			flush()
+		default:
+			buf.WriteByte(ch)
+		}
+	}
+	flush()
 	return out
 }
 

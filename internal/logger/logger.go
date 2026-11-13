@@ -9,7 +9,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"web-basic/internal/config"
+	"device-platform/internal/config"
 )
 
 var global *zap.Logger

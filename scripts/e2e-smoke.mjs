@@ -6,14 +6,15 @@
  *
  * 流程：
  *   1. 启动无头浏览器，打开登录页
- *   2. 拦截 /auth/captcha 响应拿到 captchaId，并从 Redis 读出验证码答案
+ *   2. 拦截 /auth/captcha 响应拿到 captchaId（验证码开启时需要答案；本平台默认关闭验证码，
+ *      关闭时页面不渲染验证码输入框，脚本直接提交）
  *   3. 通过真实表单填写并点击登录（校验登录链路、验证码、路由与权限下发）
  *   4. 依次访问工作台、用户管理、菜单管理、定时任务等页面，断言关键内容渲染
  *   5. 汇总控制台错误、异常请求，输出 PASS / FAIL
  *
  * 环境变量：
  *   E2E_CAPTCHA_ANSWER   指定验证码答案（需同时给出 E2E_CAPTCHA_ID）
- *   E2E_REDIS_CONTAINER  Redis 容器名；缺省时依次尝试 wb-redis / web-basic-redis / web-basic-redis57
+ *   E2E_REDIS_CONTAINER  旧架构遗留：验证码曾存 Redis，本平台已改为进程内存储（仅兼容保留）
  *   E2E_REDIS_PREFIX     Redis key 前缀，默认 web:
  *   E2E_BROWSER          浏览器可执行文件路径
  */
@@ -320,10 +321,11 @@ async function main() {
       const inputs = [...document.querySelectorAll('input')]
       const byPh = (t) => inputs.find((i) => (i.placeholder || '').includes(t))
       const u = byPh('账号'), p = byPh('密码'), c = byPh('验证码')
-      if (!u || !p || !c) return 'missing-input'
+      if (!u || !p) return 'missing-input'
       setVal(u, ${JSON.stringify(username)})
       setVal(p, ${JSON.stringify(password)})
-      setVal(c, ${JSON.stringify(answer)})
+      // 验证码关闭时页面不渲染验证码输入框（设备平台默认如此），此时直接提交
+      if (c) setVal(c, ${JSON.stringify(answer)})
       const btn = [...document.querySelectorAll('button')].find((b) => (b.innerText || '').replace(/\\s+/g, '').includes('登录'))
       if (!btn) return 'missing-button'
       btn.click()

@@ -8,18 +8,16 @@
 --       因此角色授权（sys_role_menu）与后端 middleware.Perm 校验完全不受影响。
 -- =============================================================================
 
-SET NAMES utf8mb4;
-
 -- ---------- 1. 顶级目录：系统管理 → 组织与权限 ----------
 UPDATE sys_menu
 SET name = '组织与权限', icon = 'ep:management', sort = 10, remark = '用户/角色/菜单/部门/岗位'
 WHERE id = 1000;
 
 -- ---------- 2. 新增顶级目录：系统设置（承载系统级配置与运维） ----------
-INSERT IGNORE INTO sys_menu
+INSERT OR IGNORE INTO sys_menu
   (id, parent_id, name, type, permission, path, component, icon, sort, visible, keep_alive, status, tenant_id, create_time, remark)
 VALUES
-  (1300, 0, '系统设置', 1, '', '/setting', 'Layout', 'ep:setting', 20, 1, 1, 1, 1, NOW(), '字典/参数/租户/文件/定时任务');
+  (1300, 0, '系统设置', 1, '', '/setting', 'Layout', 'ep:setting', 20, 1, 1, 1, 1, datetime('now','localtime'), '字典/参数/租户/文件/定时任务');
 
 -- 把「配置类」菜单迁移到系统设置下（路径同步改为 /setting/xxx，语义更清晰）
 UPDATE sys_menu SET parent_id = 1300, path = 'dict',   sort = 1, icon = 'ep:notebook'   WHERE id = 1060;
@@ -46,8 +44,8 @@ UPDATE sys_menu SET icon = 'ep:postcard'        , sort = 5 WHERE id = 1050;
 UPDATE sys_menu SET icon = 'ep:home-filled' WHERE id = 2000;
 
 -- ---------- 6. 授权：新目录授予内置角色（超管直通，普通用户保持可见工作台） ----------
-INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES (1, 1300), (2, 1300);
+INSERT OR IGNORE INTO sys_role_menu (role_id, menu_id) VALUES (1, 1300), (2, 1300);
 
 -- 把字典/参数/租户/文件/定时任务（含子按钮）在新目录下的授权补齐给超管
-INSERT IGNORE INTO sys_role_menu (role_id, menu_id)
+INSERT OR IGNORE INTO sys_role_menu (role_id, menu_id)
 SELECT 1, id FROM sys_menu WHERE id IN (1060,1061,1062,1063,1070,1071,1072,1073,1080,1081,1082,1083,1090,1091,1092,1100,1101,1102,1103,1104);

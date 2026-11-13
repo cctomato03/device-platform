@@ -8,17 +8,24 @@ import (
 	"strings"
 	"time"
 
-	"web-basic/internal/generator"
-	"web-basic/pkg/errs"
+	"device-platform/internal/generator"
+	"device-platform/pkg/errs"
 )
 
 // currentSchema 取当前连接所在库名（代码生成器的数据源）。
+//
+// SQLite 没有 MySQL 的 DATABASE()，库名固定为 main（PRAGMA database_list）；
+// 这里保留 MySQL 兼容分支，便于以后换驱动。
 func (s *Service) currentSchema(ctx context.Context) (string, error) {
 	sqlDB, err := s.Repo.DB.DB()
 	if err != nil {
 		return "", errs.ErrDB.WithErr(err)
 	}
 	var name string
+	// SQLite：main / temp / attached 三个库，业务表都在 main
+	if err := sqlDB.QueryRowContext(ctx, "PRAGMA database_list").Scan(new(int), &name, new(string)); err == nil {
+		return defaultStr(name, "main"), nil
+	}
 	if err := sqlDB.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&name); err != nil {
 		return "", errs.ErrDB.WithErr(err)
 	}

@@ -5,9 +5,9 @@ import (
 	"sort"
 	"strings"
 
-	"web-basic/internal/model/entity"
-	"web-basic/internal/principal"
-	"web-basic/pkg/errs"
+	"device-platform/internal/model/entity"
+	"device-platform/internal/principal"
+	"device-platform/pkg/errs"
 )
 
 // LayoutComponent 前端布局容器组件路径（与前端 router/routesAlias.ts 中 RoutesAlias.Layout 保持一致）。
@@ -33,7 +33,7 @@ type RouteMeta struct {
 	IsIframe  bool        `json:"isIframe,omitempty"`
 	AuthList  []RouteAuth `json:"authList,omitempty"`
 
-	// 以下为 web-basic 扩展字段：让前端「菜单管理」页可直接复用同一份数据
+	// 以下为 device-platform 扩展字段：让前端「菜单管理」页可直接复用同一份数据
 	Type       int    `json:"type"`
 	Permission string `json:"permission,omitempty"`
 	Sort       int    `json:"sort,omitempty"`

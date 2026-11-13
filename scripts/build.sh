@@ -36,6 +36,6 @@ cp -r web/dist/. internal/webui/dist/
 
 echo "==> 编译后端（内嵌前端，-tags embed）"
 mkdir -p "$OUT_DIR"
-CGO_ENABLED=0 go build -tags embed -trimpath -ldflags "$LDFLAGS" -o "$OUT_DIR/web-basic-server" ./cmd/server
+CGO_ENABLED=0 go build -tags embed -trimpath -ldflags "$LDFLAGS" -o "$OUT_DIR/device-platform-server" ./cmd/server
 
-echo "==> 完成：$OUT_DIR/web-basic-server  version=$VERSION commit=$COMMIT"
+echo "==> 完成：$OUT_DIR/device-platform-server  version=$VERSION commit=$COMMIT"

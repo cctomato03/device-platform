@@ -1,50 +1,124 @@
-// Package cache Redis 缓存封装：统一 key 前缀、JSON 序列化、空值防穿透。
+// Package cache 进程内缓存（设备端零外部依赖方案）。
+//
+// 平台原先依赖 Redis 承担「会话 / 在线用户 / 验证码 / 限流 / 权限缓存 / 租约」，
+// 设备是单机单进程部署，这里用内存实现同样的语义：
+//   - 字符串读写与 TTL（Set/Get/SetNX/Incr/GetInt）
+//   - JSON 读写（SetJSON/GetJSON）与空值防穿透（Remember）
+//   - 集合（SetAdd/SetMembers/SetRemove）——用于在线会话
+//   - 租约锁（AcquireLock/ExtendLock/ReleaseLock）——用于单机任务的互斥
+//
+// 代价：进程重启后会话与缓存全部失效（用户需重新登录），对设备场景可接受。
 package cache
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
+	"sync"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
-// Cache 带命名空间的 Redis 客户端封装。
+// Cache 带命名空间前缀的内存缓存。
 type Cache struct {
-	rdb    *redis.Client
+	mu     sync.RWMutex
 	prefix string
+	items  map[string]*entry
+	stopCh chan struct{}
+	once   sync.Once
 }
 
-func New(rdb *redis.Client, prefix string) *Cache {
-	return &Cache{rdb: rdb, prefix: prefix}
+type entry struct {
+	// val 字符串值；集合类型时为空
+	val string
+	// set 集合成员（nil 表示该 key 不是集合）
+	set map[string]struct{}
+	// exp 过期时间，零值表示永不过期
+	exp time.Time
 }
 
-// Client 暴露原始客户端（限流、分布式锁等场景使用）。
-func (c *Cache) Client() *redis.Client { return c.rdb }
+func (e *entry) expired(now time.Time) bool {
+	return !e.exp.IsZero() && now.After(e.exp)
+}
+
+// New 创建内存缓存实例，prefix 仅用于日志与调试可读性。
+func New(prefix string) *Cache {
+	c := &Cache{
+		prefix: prefix,
+		items:  make(map[string]*entry, 128),
+		stopCh: make(chan struct{}),
+	}
+	go c.janitor()
+	return c
+}
+
+// Stop 停止后台清理协程。
+func (c *Cache) Stop() {
+	c.once.Do(func() { close(c.stopCh) })
+}
+
+// janitor 周期性清理过期键，避免长期运行内存增长。
+func (c *Cache) janitor() {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-c.stopCh:
+			return
+		case now := <-t.C:
+			c.mu.Lock()
+			for k, e := range c.items {
+				if e.expired(now) {
+					delete(c.items, k)
+				}
+			}
+			c.mu.Unlock()
+		}
+	}
+}
 
 func (c *Cache) key(k string) string { return c.prefix + k }
 
-// Ping 探活。
-func (c *Cache) Ping(ctx context.Context) error { return c.rdb.Ping(ctx).Err() }
+// Ping 探活（内存实现恒为可用）。
+func (c *Cache) Ping(ctx context.Context) error { return nil }
 
 // Get 读取字符串，未命中返回 ("", false)。
 func (c *Cache) Get(ctx context.Context, k string) (string, bool) {
-	v, err := c.rdb.Get(ctx, c.key(k)).Result()
-	if err != nil {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	e, ok := c.items[c.key(k)]
+	if !ok || e.expired(time.Now()) || e.set != nil {
 		return "", false
 	}
-	return v, true
+	return e.val, true
 }
 
-// Set 写入字符串。
+// Set 写入字符串（ttl<=0 表示永不过期）。
 func (c *Cache) Set(ctx context.Context, k, v string, ttl time.Duration) error {
-	return c.rdb.Set(ctx, c.key(k), v, ttl).Err()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e := &entry{val: v}
+	if ttl > 0 {
+		e.exp = time.Now().Add(ttl)
+	}
+	c.items[c.key(k)] = e
+	return nil
 }
 
-// SetNX 仅当 key 不存在时写入，用于幂等/防重。
+// SetNX 仅当 key 不存在时写入（幂等/防重）。
 func (c *Cache) SetNX(ctx context.Context, k, v string, ttl time.Duration) (bool, error) {
-	return c.rdb.SetNX(ctx, c.key(k), v, ttl).Result()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := c.key(k)
+	if e, ok := c.items[key]; ok && !e.expired(time.Now()) {
+		return false, nil
+	}
+	e := &entry{val: v}
+	if ttl > 0 {
+		e.exp = time.Now().Add(ttl)
+	}
+	c.items[key] = e
+	return true, nil
 }
 
 // Del 删除一个或多个 key。
@@ -52,37 +126,49 @@ func (c *Cache) Del(ctx context.Context, keys ...string) error {
 	if len(keys) == 0 {
 		return nil
 	}
-	real := make([]string, 0, len(keys))
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for _, k := range keys {
-		real = append(real, c.key(k))
+		delete(c.items, c.key(k))
 	}
-	return c.rdb.Del(ctx, real...).Err()
+	return nil
 }
 
-// Incr 自增并设置过期时间（首次写入时设置）。
+// Incr 自增并设置过期时间（首次写入时设置），用于滑动窗口限流。
 func (c *Cache) Incr(ctx context.Context, k string, ttl time.Duration) (int64, error) {
-	pipe := c.rdb.TxPipeline()
-	incr := pipe.Incr(ctx, c.key(k))
-	pipe.Expire(ctx, c.key(k), ttl)
-	if _, err := pipe.Exec(ctx); err != nil {
-		return 0, err
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := c.key(k)
+	e, ok := c.items[key]
+	now := time.Now()
+	if !ok || e.expired(now) || e.set != nil {
+		e = &entry{}
+		if ttl > 0 {
+			e.exp = now.Add(ttl)
+		}
+		c.items[key] = e
 	}
-	return incr.Val(), nil
+	n, _ := strconv.ParseInt(e.val, 10, 64)
+	n++
+	e.val = strconv.FormatInt(n, 10)
+	return n, nil
 }
 
 // GetInt 读取整数计数。
 func (c *Cache) GetInt(ctx context.Context, k string) int64 {
-	n, err := c.rdb.Get(ctx, c.key(k)).Int64()
-	if err != nil {
-		return 0
+	if v, ok := c.Get(ctx, k); ok {
+		n, _ := strconv.ParseInt(v, 10, 64)
+		return n
 	}
-	return n
+	return 0
 }
 
 // Exists 判断 key 是否存在。
 func (c *Cache) Exists(ctx context.Context, k string) bool {
-	n, err := c.rdb.Exists(ctx, c.key(k)).Result()
-	return err == nil && n > 0
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	e, ok := c.items[c.key(k)]
+	return ok && !e.expired(time.Now())
 }
 
 // SetJSON 写入 JSON。
@@ -103,7 +189,9 @@ func (c *Cache) GetJSON(ctx context.Context, k string, out any) bool {
 	return json.Unmarshal([]byte(s), out) == nil
 }
 
-// Remember 缓存未命中时调用 loader 回源（带空值缓存防穿透）。
+const emptyPlaceholder = "\x00nil"
+
+// Remember 缓存未命中时回源 loader（带空值缓存防穿透）。
 func (c *Cache) Remember(ctx context.Context, k string, ttl time.Duration, loader func() (string, error)) (string, error) {
 	if v, ok := c.Get(ctx, k); ok {
 		if v == emptyPlaceholder {
@@ -113,79 +201,119 @@ func (c *Cache) Remember(ctx context.Context, k string, ttl time.Duration, loade
 	}
 	v, err := loader()
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
+		if errors.Is(err, ErrNotFound) {
 			return "", nil
 		}
 		return "", err
 	}
 	if v == "" {
-		_ = c.Set(ctx, k, emptyPlaceholder, 60*time.Second)
+		_ = c.Set(ctx, k, emptyPlaceholder, time.Minute)
 		return "", nil
 	}
 	_ = c.Set(ctx, k, v, jitter(ttl))
 	return v, nil
 }
 
-const emptyPlaceholder = "\x00nil"
+// ErrNotFound 回源未命中语义错误。
+var ErrNotFound = errors.New("cache: not found")
 
-// Lua 脚本：只有持有者 token 匹配时才续期/删除，避免"锁过期后被他人持有，却被前一个持有者误删"。
-var (
-	scriptExtend = redis.NewScript(`
-if redis.call('get', KEYS[1]) == ARGV[1] then
-  return redis.call('pexpire', KEYS[1], ARGV[2])
-end
-return 0`)
-	scriptRelease = redis.NewScript(`
-if redis.call('get', KEYS[1]) == ARGV[1] then
-  return redis.call('del', KEYS[1])
-end
-return 0`)
-)
-
-// AcquireLock 抢占租约（SET NX + TTL）。返回 (是否抢到, error)。
+// AcquireLock 抢占租约（等价 SET NX + TTL）。
 func (c *Cache) AcquireLock(ctx context.Context, k, token string, ttl time.Duration) (bool, error) {
-	return c.rdb.SetNX(ctx, c.key(k), token, ttl).Result()
+	return c.SetNX(ctx, k, token, ttl)
 }
 
-// ExtendLock 续期租约：仅当仍由 token 持有时生效（心跳续期用）。
+// ExtendLock 续期租约：仅当仍由 token 持有时生效。
 func (c *Cache) ExtendLock(ctx context.Context, k, token string, ttl time.Duration) bool {
-	n, err := scriptExtend.Run(ctx, c.rdb, []string{c.key(k)}, token, ttl.Milliseconds()).Int64()
-	return err == nil && n == 1
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := c.key(k)
+	e, ok := c.items[key]
+	if !ok || e.expired(time.Now()) || e.val != token {
+		return false
+	}
+	e.exp = time.Now().Add(ttl)
+	return true
 }
 
-// ReleaseLock 释放租约：仅当仍由 token 持有时删除（避免误删他人的锁）。
+// ReleaseLock 释放租约：仅当仍由 token 持有时删除。
 func (c *Cache) ReleaseLock(ctx context.Context, k, token string) bool {
-	n, err := scriptRelease.Run(ctx, c.rdb, []string{c.key(k)}, token).Int64()
-	return err == nil && n == 1
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := c.key(k)
+	e, ok := c.items[key]
+	if !ok || e.val != token {
+		return false
+	}
+	delete(c.items, key)
+	return true
 }
 
-// SetAdd 集合添加元素。
+// SetAdd 集合添加成员。
 func (c *Cache) SetAdd(ctx context.Context, k string, members ...string) error {
 	if len(members) == 0 {
 		return nil
 	}
-	args := make([]any, 0, len(members))
-	for _, m := range members {
-		args = append(args, m)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := c.key(k)
+	e, ok := c.items[key]
+	if !ok || e.expired(time.Now()) || e.set == nil {
+		e = &entry{set: make(map[string]struct{}, len(members))}
+		c.items[key] = e
 	}
-	return c.rdb.SAdd(ctx, c.key(k), args...).Err()
+	for _, m := range members {
+		e.set[m] = struct{}{}
+	}
+	return nil
 }
 
-// SetMembers 集合元素列表。
+// SetMembers 集合成员列表。
 func (c *Cache) SetMembers(ctx context.Context, k string) []string {
-	return c.rdb.SMembers(ctx, c.key(k)).Val()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	e, ok := c.items[c.key(k)]
+	if !ok || e.expired(time.Now()) || e.set == nil {
+		return nil
+	}
+	out := make([]string, 0, len(e.set))
+	for m := range e.set {
+		out = append(out, m)
+	}
+	return out
 }
 
-// SetRemove 集合移除元素。
+// SetRemove 集合移除成员。
 func (c *Cache) SetRemove(ctx context.Context, k string, members ...string) error {
 	if len(members) == 0 {
 		return nil
 	}
-	args := make([]any, 0, len(members))
-	for _, m := range members {
-		args = append(args, m)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.items[c.key(k)]
+	if !ok || e.set == nil {
+		return nil
 	}
-	return c.rdb.SRem(ctx, c.key(k), args...).Err()
+	for _, m := range members {
+		delete(e.set, m)
+	}
+	if len(e.set) == 0 {
+		delete(c.items, c.key(k))
+	}
+	return nil
+}
+
+// Stats 返回缓存规模（调试与监控用）。
+func (c *Cache) Stats() (keys int, approxBytes int) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	keys = len(c.items)
+	for k, e := range c.items {
+		approxBytes += len(k) + len(e.val)
+		for m := range e.set {
+			approxBytes += len(m)
+		}
+	}
+	return keys, approxBytes
 }
 
 // jitter 给 TTL 加 ±10% 抖动，避免缓存同时到期引发雪崩。

@@ -4,8 +4,8 @@ package scope
 import (
 	"gorm.io/gorm"
 
-	"web-basic/internal/model/entity"
-	"web-basic/internal/principal"
+	"device-platform/internal/model/entity"
+	"device-platform/internal/principal"
 )
 
 // Tenant 租户字段隔离；tenantID=0 表示平台级数据（超管跨租户）。
